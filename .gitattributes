@@ -1,0 +1,2 @@
+# Keep LF everywhere: the build scripts run in WSL, and xsdk's tools expect it.
+* text=auto eol=lf

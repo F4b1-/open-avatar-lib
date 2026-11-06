@@ -1,0 +1,5 @@
+# XAM imports the library uses (src/avatar_content.c) beyond xsdk's own, in xsdk's format: library, ordinal, export name.
+# Ordinals from xenia:src/xenia/kernel/xam/xam_table.inc; both calls checked on the console (tools/probe_manifest).
+
+xam.xex  0x227  XamUserGetSigninInfo
+xam.xex  0x5DE  XamAvatarGetManifestLocalUser

@@ -1,0 +1,46 @@
+# store
+
+The Avatar Thrift Store: walk your avatar round a small shop full of NPCs, and emote from a wheel. It grew out of
+the room sample and is laid out after the user's concept picture of the store, in simple shapes and colours of our
+own (no art from anywhere else): a brick back wall, board walls and a plank floor (patterns worked out in the
+shader); shelves with caps, folded shirts, game cases and shoe boxes; two clothing racks and a rail of hoodies; a
+fitting room; the counter with two old televisions under a neon "AVATAR THRIFT STORE" sign; cardboard boxes,
+plants, track lights, and "FREE" and "0 MSP" price tags. A window in the left wall looks out on a snowy evening: snow
+on the ground, pines and a fence, an evening sky, and snow falling in three layers (built once; each layer's block of
+flakes is moved down as one and wrapped round, `mesh_draw_placed`).
+
+| Control | Action |
+|---|---|
+| left stick | walk, relative to the camera |
+| right stick | the camera round the avatar, and up and down |
+| LB held | the emote wheel: the right stick picks, letting go of LB plays it |
+| right stick click | 2 / 4 / 1 samples a pixel (2 after starting: nine avatars are drawn once per band) |
+| both triggers | screenshot: a PNG in `Screenshots` next to the title |
+| BACK | exit |
+
+The wheel's emotes: wave, clap, cheer, laugh, talk, angry, sad, confused, shocked, yawn. Each plays its stock
+animation (the male or female one for the emotions, by the avatar's body) with a face to match, back to standing and
+a neutral face after. Talk keeps standing and moves the mouth for a few seconds, and the nearest NPC answers.
+
+## The NPCs
+
+Stock avatars by part name (`xsdk_avatar_load_stock`), with faces (eyes, eyebrows, mouth, facial hair): the
+shopkeeper behind the counter; two shoppers chatting, taking turns to talk, the listener now and then laughing;
+three browsing at the shelves and racks; two faceless white mannequins showing outfits, standing still
+(`xsdk_avatar_draw_pose`). Description files in an `Avatars` folder beside the title join as more browsers (up to
+three). They blink, idle now and then (the stock idles), turn to the player when it comes near and wave.
+
+## Files
+
+| File | What it does |
+|---|---|
+| `main.c` | loading, the controls, walking, the emotes, the camera, the frame in bands |
+| `scene.c` | the store: its parts, the sign, what avatars bump into |
+| `npcs.c` | the NPCs: outfits, places and behaviour |
+| `wheel.c` | the emote wheel, drawn over the screen |
+| `mesh.c` | the store's own drawing: triangles in GPU memory, lit as the avatars are, glowing, blended or overlaid |
+| `font.c` | a small stroke font of our own (capitals, 0, space) for the sign, the tags and the wheel |
+| `store_shaders.py` | the store's shaders, made with the library's generator, lit by its `LIGHTING` |
+
+Screenshots use `samples/viewer/screenshot.c`. Build with `./build.sh` at the top of the project:
+`build/console/samples/store/store.xex`; its log is `store.log` next to it.

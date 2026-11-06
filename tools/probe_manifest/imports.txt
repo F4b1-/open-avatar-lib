@@ -1,0 +1,7 @@
+# XAM imports the probe uses beyond xsdk's own, in xsdk's format: library, ordinal, export name.
+# Ordinals from xenia:src/xenia/kernel/xam/xam_table.inc (xenia-canary); arguments from xenia's xam_user.cc and
+# xam_avatar.cc, and XamUserGetSigninInfo's from Avatar Thrift Store's app/kernel_extra.h.
+
+xam.xex  0x219  XamUserReadProfileSettings
+xam.xex  0x227  XamUserGetSigninInfo
+xam.xex  0x5DE  XamAvatarGetManifestLocalUser

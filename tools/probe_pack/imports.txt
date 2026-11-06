@@ -1,0 +1,8 @@
+# Kernel imports the probe uses beyond xsdk's own (xsdk/imports/imports.txt), in the same format: library, ordinal,
+# export name. Ordinals from xenia:src/xenia/kernel/xboxkrnl/xboxkrnl_table.inc:236-250 (xenia-canary). Xenia lists
+# them but doesn't implement them; their arguments are the original Xbox kernel's (nxdk lib/xboxkrnl/xboxkrnl.h).
+
+xboxkrnl.exe  0x0DE  NtOpenDirectoryObject
+xboxkrnl.exe  0x0E0  NtOpenSymbolicLinkObject
+xboxkrnl.exe  0x0E5  NtQueryDirectoryObject
+xboxkrnl.exe  0x0EC  NtQuerySymbolicLinkObject
