@@ -142,15 +142,59 @@ static int check_stock(XsdkAvatarDescription *d, AvatarOutfit *outfit)
 	return failures ? 1 : 0;
 }
 
+// The rig export (src/avatar_export.c) as the console runs it: male or female (a bare body and head), stock (the
+// avatar of check_stock), or a description with the folders' item packages. Writes the .glb; the file holds the
+// console's meshes, keep it off the repository.
+static int export_rig(const char *out, const char *what)
+{
+	static const XsdkAvatarStockPart male[] = { { "MaleBody", 0xFFC68642 }, { "Head", 0xFFC68642 } };
+	static const XsdkAvatarStockPart female[] = { { "FemaleBody", 0xFFC68642 }, { "Head", 0xFFC68642 } };
+	static const XsdkAvatarStockPart stock[] = { { "MaleBody", 0xFFC68642 }, { "Head", 0xFFC68642 },
+		{ "Buzz Cut", 0xFF2A1B10 }, { "Male Punk Tee", 0xFF303030 }, { "Jeans", 0xFF3A4E7A },
+		{ "High Top Sneakers", 0xFF202020 } };
+	void *glb = NULL;
+	uint32_t size = 0;
+	int result;
+	if (strcmp(what, "male") == 0)
+		result = xsdk_avatar_export_stock(male, 2, &glb, &size);
+	else if (strcmp(what, "female") == 0)
+		result = xsdk_avatar_export_stock(female, 2, &glb, &size);
+	else if (strcmp(what, "stock") == 0)
+		result = xsdk_avatar_export_stock(stock, sizeof stock / sizeof stock[0], &glb, &size);
+	else {
+		static uint8_t bytes[XSDK_AVATAR_DESCRIPTION_BYTES];
+		FILE *file = fopen(what, "rb");
+		if (!file || fread(bytes, 1, sizeof bytes, file) != sizeof bytes)
+			return 2;
+		fclose(file);
+		result = xsdk_avatar_export_description(bytes, sizeof bytes, &glb, &size);
+	}
+	FILE *file = result == XSDK_AVATAR_OK ? fopen(out, "wb") : NULL;
+	const bool written = file && fwrite(glb, 1, size, file) == size;
+	if (file)
+		fclose(file);
+	free(glb);
+	printf("export: %s: %d, %u bytes%s\n", what, result, (unsigned)size, written ? "" : ", not written");
+	return written ? 0 : 1;
+}
+
 int main(int argc, char **argv)
 {
-	if (argc < 3) {
-		fprintf(stderr, "usage: outfit_check <FFFE07DF00000002> <description> [<package folder> ...]\n");
+	if (argc < 3 || (strcmp(argv[2], "export") == 0 && argc < 5)) {
+		fprintf(stderr, "usage: outfit_check <FFFE07DF00000002> <description> [<package folder> ...]\n"
+						"       outfit_check <FFFE07DF00000002> stock\n"
+						"       outfit_check <FFFE07DF00000002> export <out.glb> male|female|stock|<description> "
+						"[<package folder> ...]\n");
 		return 2;
 	}
 	pack_file = fopen(argv[1], "rb");
 	if (!pack_file || xsdk_avatar_pack_open(&pack, read_file, pack_file) != XSDK_AVATAR_OK)
 		return 2;
+	if (strcmp(argv[2], "export") == 0) {
+		folders = (const char *const *)argv + 5;
+		folder_count = argc - 5;
+		return export_rig(argv[3], argv[4]);
+	}
 	folders = (const char *const *)argv + 3;
 	folder_count = argc - 3;
 	XsdkAvatarDescription d;

@@ -73,9 +73,12 @@ void wheel_build(uint32_t width, uint32_t height, const char *const *names, uint
 		lit_ranges[i] = mesh_since(mark);
 	}
 	mark = mesh_mark();
+	// More than ten segments: smaller labels, to fit their narrower segments.
+	const float fit = segments > 10 ? 10.0f / (float)segments : 1.0f;
 	const float r = 0.5f * (inner + outer);
 	for (uint32_t i = 0; i < segments; i++)
-		screen_text(names[i], cx + r * cosf(middle_of(i)), cy + r * sinf(middle_of(i)), label_scale, label_thickness);
+		screen_text(names[i], cx + r * cosf(middle_of(i)), cy + r * sinf(middle_of(i)), label_scale * fit,
+			label_thickness * fit);
 	label_range = mesh_since(mark);
 	mark = mesh_mark();
 	arc(0.0f, inner - 6.0f, 0.0f, 2.0f * pi, hub);

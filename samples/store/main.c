@@ -4,10 +4,14 @@
 // Left stick: walk. Right stick: turn the camera. LB held: the emote wheel; right stick picks, letting go of LB plays
 // it. Right stick click: 2 / 4 / 1 samples a pixel. Both triggers: screenshot. BACK: exit. Log: game:\store.log.
 
+#include <dirent.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
 
 #include "mesh.h"
@@ -68,6 +72,64 @@ static const Emote emotes[] = {
 };
 enum { EMOTES = sizeof emotes / sizeof emotes[0] };
 static const XsdkAvatarFace neutral = { 0, 0, 0, 0, 0 };
+
+// Animations of the player's own (made in Blender, converted by tools/anim_convert.py): every .xaan file in the
+// Animations folder beside the title, up to MAX_CUSTOM, on the wheel after the stock emotes, named after their files.
+enum {
+	MAX_CUSTOM = 4,
+	NAME_LETTERS = 9,
+};
+static const char custom_folder[] = "Animations";
+static XsdkAvatarAnimation customs[MAX_CUSTOM];
+static char custom_names[MAX_CUSTOM][NAME_LETTERS + 1];
+static uint32_t custom_count;
+
+// A file's name as the wheel's font can write it: capital letters, 0 and spaces, NAME_LETTERS at most.
+static void wheel_name(char *out, const char *file)
+{
+	uint32_t n = 0;
+	for (const char *c = file; *c && *c != '.' && n < NAME_LETTERS; c++) {
+		char ch = *c >= 'a' && *c <= 'z' ? (char)(*c - 'a' + 'A') : *c;
+		out[n++] = (ch >= 'A' && ch <= 'Z') || ch == '0' ? ch : ' ';
+	}
+	out[n] = '\0';
+}
+
+static void load_customs(const XsdkAvatar *avatar)
+{
+	DIR *dir = opendir(custom_folder);
+	if (!dir) {
+		xsdk_log_write("store: no %s folder: no animations of your own", custom_folder);
+		return;
+	}
+	const struct dirent *entry;
+	while ((entry = readdir(dir)) && custom_count < MAX_CUSTOM) {
+		const size_t length = strlen(entry->d_name);
+		if (length < 5 || strcasecmp(entry->d_name + length - 5, ".xaan") != 0)
+			continue;
+		char path[300];
+		snprintf(path, sizeof path, "%s/%s", custom_folder, entry->d_name);
+		FILE *file = fopen(path, "rb");
+		if (!file)
+			continue;
+		(void)fseek(file, 0, SEEK_END);
+		const long size = ftell(file);
+		(void)fseek(file, 0, SEEK_SET);
+		void *bytes = size > 0 ? malloc((size_t)size) : NULL;
+		const bool read = bytes && fread(bytes, 1, (size_t)size, file) == (size_t)size;
+		(void)fclose(file);
+		// Made in Blender on the rig: its root turns about the rig's pivot, moved onto this avatar's (SPECS.md, 4.8).
+		const int result = read ? xsdk_avatar_animation_load(&customs[custom_count], bytes, (uint32_t)size,
+									  xsdk_avatar_skeleton(avatar))
+								: XSDK_AVATAR_ERROR_READ;
+		free(bytes);
+		xsdk_log_write("store: %s: %d, %u frames, %.2f s", path, result, (unsigned)customs[custom_count].frame_count,
+			(double)xsdk_avatar_animation_length(&customs[custom_count]));
+		if (result == XSDK_AVATAR_OK)
+			wheel_name(custom_names[custom_count++], entry->d_name);
+	}
+	(void)closedir(dir);
+}
 
 enum { STANDING, WALKING, EMOTING };
 
@@ -180,7 +242,7 @@ int main(void)
 	}
 	// A warm light from above the front, as under the store's spots; the avatars and the store share it.
 	const XsdkAvatarLight light = { .direction = { 0.25f, 0.9f, 0.45f }, .color = { 0.85f, 0.78f, 0.66f },
-		.sky = { 0.42f, 0.40f, 0.38f }, .ground = { 0.24f, 0.19f, 0.15f }, .wrap = 0.4f, .highlight = 0.22f };
+		.sky = { 0.42f, 0.40f, 0.38f }, .ground = { 0.24f, 0.19f, 0.15f }, .wrap = 0.4f, .highlight = 0.0f };
 	xsdk_avatar_set_light(&light);
 	XsdkAvatar *avatar = load_avatar();
 	static XsdkAvatarAnimation walk;
@@ -191,10 +253,13 @@ int main(void)
 	xsdk_avatar_info(avatar, &info);
 	xsdk_log_write("store: %u NPCs", (unsigned)npcs_load());
 	scene_build();
-	const char *names[EMOTES];
+	load_customs(avatar);
+	const char *names[EMOTES + MAX_CUSTOM];
 	for (uint32_t i = 0; i < EMOTES; i++)
 		names[i] = emotes[i].name;
-	wheel_build(width, height, names, EMOTES);
+	for (uint32_t i = 0; i < custom_count; i++)
+		names[EMOTES + i] = custom_names[i];
+	wheel_build(width, height, names, EMOTES + custom_count);
 	if (!mesh_upload())
 		return 1;
 	XsdkAvatarPlayer *player = xsdk_avatar_player(avatar);
@@ -249,7 +314,15 @@ int main(void)
 			camera_pitch -= 0.03f * ry;
 			camera_pitch = camera_pitch < 0.05f ? 0.05f : camera_pitch > 1.1f ? 1.1f : camera_pitch;
 		}
-		if ((released & INPUT_GAMEPAD_LEFT_SHOULDER) && picked >= 0) {
+		if ((released & INPUT_GAMEPAD_LEFT_SHOULDER) && picked >= EMOTES) {
+			// One of the player's own: once, then back to standing, with a neutral face.
+			player->speed = 1.0f;
+			xsdk_avatar_player_play(player, &customs[picked - EMOTES], XSDK_AVATAR_ONCE);
+			(void)xsdk_avatar_queue(avatar, XSDK_AVATAR_ANIMATION_STAND, XSDK_AVATAR_LOOP);
+			xsdk_avatar_set_face(avatar, &neutral);
+			state = EMOTING;
+			xsdk_log_write("store: %s", custom_names[picked - EMOTES]);
+		} else if ((released & INPUT_GAMEPAD_LEFT_SHOULDER) && picked >= 0) {
 			const Emote *e = &emotes[picked];
 			const char *animation = info.gender == XSDK_AVATAR_FEMALE ? e->female : e->male;
 			player->speed = 1.0f;
@@ -329,9 +402,13 @@ int main(void)
 			break;
 		const double draw_start = seconds_now();
 		const uint32_t rows = band_rows(width, height, samples);
+		// Every band's colour after a whole band's depth: xsdk's own layout (depth, then colour) follows each
+		// target's size, so the last, shorter band's colour would lie where the others keep depth, and its clear
+		// (CLEAR_ARGB, read as depth about 0.996, some 10 m away) would hide what is farther in their rows (test run 6).
+		const uint32_t color_tile = xsdk_gpu_target_sample_tiles(width, rows, samples);
 		for (uint32_t top = 0; top < height; top += rows) {
 			const uint32_t band = height - top < rows ? height - top : rows;
-			xsdk_gpu_set_target_samples(width, band, samples);
+			xsdk_gpu_set_target_samples_at(width, band, samples, color_tile, 0);
 			xsdk_gpu_set_viewport(0.0f, -(float)top, (float)width, (float)height, 0.0f, 1.0f);
 			mesh_use_opaque();
 			scene_draw(vp, (const float (*)[4])lighting);
@@ -369,6 +446,8 @@ int main(void)
 	xsdk_avatar_close(avatar);
 	npcs_close();
 	xsdk_avatar_animation_free(&walk);
+	for (uint32_t i = 0; i < custom_count; i++)
+		xsdk_avatar_animation_free(&customs[i]);
 	xsdk_avatar_shutdown();
 	mesh_close();
 	(void)xsdk_gpu_close();

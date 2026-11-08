@@ -363,6 +363,21 @@ int avatar_outfit_describe_stock(XsdkAvatarDescription *d, const XsdkAvatarStock
 	return XSDK_AVATAR_OK;
 }
 
+void avatar_outfit_hidden(const AvatarOutfit *outfit, const AvatarPart *part, uint8_t *hidden, uint32_t triangles)
+{
+	memset(hidden, 0, triangles);
+	if (part->record == UINT32_MAX)
+		return;
+	for (uint32_t q = 0; q < outfit->part_count; q++) {
+		const XsdkAvatarShape *shape = &outfit->parts[q].shape;
+		if (shape->target_record != part->record || shape->target_index_bytes != triangles * 6)
+			continue;
+		for (uint32_t k = 0; k < shape->hidden_count; k++)
+			if (shape->hidden[k] < triangles)
+				hidden[shape->hidden[k]] = 1;
+	}
+}
+
 void avatar_outfit_free(AvatarOutfit *outfit)
 {
 	for (uint32_t p = 0; p < outfit->part_count; p++) {

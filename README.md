@@ -77,14 +77,29 @@ In WSL, from this folder:
 
 Without an argument it uses Avatar Thrift Store's xsdk submodule (`../avatar_thrift_store/third_party/xsdk`).
 
+## Making animations
+
+1. Run `samples/rig_export` on the console. It writes rigs to animate beside its `.xex`: `rig_male.glb` and
+   `rig_female.glb` (the bare body and head) and `rig_mine.glb` (your signed-in avatar in its clothes), showing on
+   screen how each went. Each is the library's 71-bone skeleton in the T-pose with 360sona's bone names, textured
+   (`xsdk_avatar_export_*` in a title of your own). They hold the console's meshes, so keep them out of the
+   repository.
+2. Import it into Blender (or any 3D program that reads glTF), animate, and export glTF with the animation.
+3. `python3 tools/anim_convert.py <export.glb> <out.xaan>` turns the export into the library's own file, which
+   `xsdk_avatar_animation_load` reads (the store sample plays files from an `Animations` folder beside it).
+
 ## Tests
 
 - `build/pc/player_check`: the player's cross-fades, queueing and timing, on made-up animations.
 - `build/pc/walk_check <FFFE07DF00000002>`: the walk made in code on both bodies: it loops, the standing foot stays
   on the floor without sliding, and the legs are symmetric.
+- `tools/anim_convert.py <in.glb> <out.xaan>` and `build/pc/anim_check <FFFE07DF00000002> <out.xaan> "<stock name>"`: an
+  animation from a glTF export (360sona's, say) converted into the library's own file and checked against the stock
+  animation it holds.
 - `build/pc/outfit_check <FFFE07DF00000002> <description> <package folder> ...`: an avatar's parts put together as
   on the console (stock parts, item packages, what each hides of the body), from your own files. With `stock` for the
-  description: an avatar of stock parts with face features.
+  description: an avatar of stock parts with face features. With `export <out.glb> male|female|stock|<description>`:
+  the console's rig export, run on the PC.
 - `build/pc/avatar_dump` with `research/check_c.py`: the decoders against the Python prototypes, on your own console
   files (the stock pack, item packages). See the comments at the top of both.
 

@@ -44,3 +44,19 @@ three). They blink, idle now and then (the stock idles), turn to the player when
 
 Screenshots use `samples/viewer/screenshot.c`. Build with `./build.sh` at the top of the project:
 `build/console/samples/store/store.xex`; its log is `store.log` next to it.
+
+## Animations of your own
+
+Every `.xaan` file in an `Animations` folder next to `store.xex` (up to four) joins the emote wheel after the stock
+emotes, named after its file (capital letters, up to nine). Picking it plays it once, then the avatar stands again.
+Its root motion is moved onto your avatar's skeleton (`xsdk_avatar_animation_load` with the skeleton), as is right
+for animations made in Blender on a 360sona rig (SPECS.md, section 4.8).
+
+From Blender to the console:
+
+1. Export your avatar from 360sona as `.glb`: T-pose, rig and bones, no props.
+2. In Blender, File > Import > glTF 2.0, animate the armature (rotations; move only the hips), and export as glTF
+   Binary (`.glb`) with the animation.
+3. In WSL: `python3 tools/anim_convert.py my_dance.glb my_dance.xaan` (`--list` shows the file's animations,
+   `--animation NAME` picks one).
+4. Copy `my_dance.xaan` into `Animations` next to `store.xex`. `store.log` says whether it loaded.

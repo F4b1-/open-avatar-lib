@@ -64,7 +64,32 @@ int avatar_outfit_load(AvatarOutfit *outfit, const XsdkAvatarDescription *descri
 // A description of stock parts, with a plain face.
 int avatar_outfit_describe_stock(
 	XsdkAvatarDescription *description, const XsdkAvatarStockPart *parts, uint32_t count);
+// Marks the triangles of part that the outfit's other parts hide (SPECS.md, section 3.7), numbered across its meshes:
+// a byte per triangle, 1 if hidden. The renderer and the export leave them out.
+void avatar_outfit_hidden(const AvatarOutfit *outfit, const AvatarPart *part, uint8_t *hidden, uint32_t triangles);
 void avatar_outfit_free(AvatarOutfit *outfit);
+
+// ---- avatar_export.c: an outfit as a rig to animate (SPECS.md, section 4.9); no GPU ----
+
+// The outfit's skeleton and parts as a glTF binary, malloc'd into *glb.
+int avatar_export_outfit(const AvatarOutfit *outfit, void **glb, uint32_t *size_bytes);
+
+// avatar_bake.c: a part's material as one picture, its textures mixed as the renderer mixes them, in the coordinates
+// of uv_set (the base texture's; the Head's first layer's), addressed as clamp says; RGBA rows from the top.
+typedef struct {
+	uint32_t width, height;
+	uint8_t *rgba; // malloc'd
+	uint32_t uv_set;
+	bool clamp;
+	bool see_through; // blended by its alpha (sunglasses lenses); else alpha is 1
+} AvatarBake;
+
+// hidden: the part's triangles other parts hide (avatar_outfit_hidden). XSDK_AVATAR_ERROR_NOT_FOUND if the material
+// has no texture to bake.
+int avatar_bake_material(const AvatarPart *part, uint32_t material, const uint8_t *hidden, AvatarBake *out);
+
+// avatar_png.c: RGBA rows as a PNG file, malloc'd into *png.
+int avatar_png_encode(const uint8_t *rgba, uint32_t width, uint32_t height, uint8_t **png, uint32_t *size_bytes);
 
 // ---- avatar_render.c: an outfit in GPU memory, and its draws ----
 

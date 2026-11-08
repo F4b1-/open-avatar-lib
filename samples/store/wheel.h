@@ -7,7 +7,7 @@
 #include <stdint.h>
 
 enum {
-	WHEEL_MAX = 12,
+	WHEEL_MAX = 14,
 };
 
 // Into the mesh, before mesh_upload: for a screen of width x height pixels, count segments named by names.

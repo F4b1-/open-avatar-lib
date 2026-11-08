@@ -44,7 +44,7 @@ static const XsdkAvatarLight default_light = {
 	.sky = { 0.46f, 0.47f, 0.50f },
 	.ground = { 0.22f, 0.20f, 0.19f },
 	.wrap = 0.35f,
-	.highlight = 0.20f,
+	.highlight = 0.0f, // the system draws avatars matte (test run 6, its Dress Up screen)
 };
 // The light's first four constants, as the pixel shaders take them; the default's until a title sets its own.
 static float light[4][4];
@@ -275,23 +275,6 @@ static void set_color(float *out, const float *rgb)
 	out[3] = 1.0f;
 }
 
-// Marks the triangles of part that the outfit's other parts hide (SPECS.md, section 3.7), numbered across its meshes.
-// hidden has a byte per triangle.
-static void mark_hidden(const AvatarOutfit *outfit, const AvatarPart *part, uint8_t *hidden, uint32_t triangles)
-{
-	memset(hidden, 0, triangles);
-	if (part->record == UINT32_MAX)
-		return;
-	for (uint32_t q = 0; q < outfit->part_count; q++) {
-		const XsdkAvatarShape *shape = &outfit->parts[q].shape;
-		if (shape->target_record != part->record || shape->target_index_bytes != triangles * 6)
-			continue;
-		for (uint32_t k = 0; k < shape->hidden_count; k++)
-			if (shape->hidden[k] < triangles)
-				hidden[shape->hidden[k]] = 1;
-	}
-}
-
 // Every frame of a face layer into GPU memory, one after another in one allocation, a texture each (SPECS.md,
 // section 3.5): 14 for eyes and mouths, 5 for eyebrows, else 1.
 static void upload_frames(AvatarDrawable *d, uint32_t layer, const XsdkAvatarTexture *source)
@@ -498,7 +481,7 @@ static int fill_parts(AvatarDrawable *d, const AvatarOutfit *outfit, uint16_t *s
 		uint8_t *hidden = malloc(triangles ? triangles : 1);
 		if (!hidden)
 			return XSDK_AVATAR_ERROR_MEMORY;
-		mark_hidden(outfit, part, hidden, triangles);
+		avatar_outfit_hidden(outfit, part, hidden, triangles);
 		XsdkTexture *uploaded[UPLOADED_MAX] = { 0 };
 		bool face_uploaded = false;
 		for (uint32_t k = 0; k < model->material_count; k++) {

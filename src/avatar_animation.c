@@ -142,6 +142,75 @@ int xsdk_avatar_animation_decode(XsdkAvatarAnimation *animation, const void *str
 	return XSDK_AVATAR_OK;
 }
 
+// The library's own animation file (SPECS.md, section 4.8), little-endian: "XAAN", u32 version 1, u32 bones, u32
+// frames, f32 frames a second, f32 x 3 the rig's root pivot; then per frame f32 x 3 the root's move from that pivot
+// and per bone f32 x 4 its rotation (x, y, z, w).
+enum {
+	FILE_HEADER_BYTES = 4 + 4 + 4 + 4 + 4 + 12,
+	FILE_VERSION = 1,
+};
+
+static float file_float(const uint8_t *p)
+{
+	return avatar_float(avatar_le32(p));
+}
+
+int xsdk_avatar_animation_load(
+	XsdkAvatarAnimation *animation, const void *bytes, uint32_t size_bytes, const XsdkAvatarSkeleton *skeleton)
+{
+	memset(animation, 0, sizeof *animation);
+	const uint8_t *b = bytes;
+	if (size_bytes < FILE_HEADER_BYTES || memcmp(b, "XAAN", 4) != 0)
+		return XSDK_AVATAR_ERROR_FORMAT;
+	const uint32_t version = avatar_le32(b + 4), bones = avatar_le32(b + 8), frames = avatar_le32(b + 12);
+	const float fps = file_float(b + 16);
+	if (version != FILE_VERSION)
+		return XSDK_AVATAR_ERROR_UNSUPPORTED;
+	const uint64_t frame_bytes = 12 + 16 * (uint64_t)bones;
+	if (bones != XSDK_AVATAR_BONES || frames < 1 || !(fps > 0.0f) ||
+		FILE_HEADER_BYTES + frame_bytes * frames > size_bytes)
+		return XSDK_AVATAR_ERROR_FORMAT;
+	animation->poses = malloc(sizeof(XsdkAvatarBonePose) * bones * frames);
+	if (!animation->poses)
+		return XSDK_AVATAR_ERROR_MEMORY;
+	animation->frame_count = frames;
+	animation->frames_per_second = fps;
+	animation->bone_count = bones;
+	// The root's move is from the rig's pivot; on this skeleton's, a rotation about another point moves it by
+	// (R - 1)(ours - theirs) more (SPECS.md, section 4.7).
+	float shift[3] = { 0, 0, 0 };
+	if (skeleton && skeleton->bone_count == XSDK_AVATAR_BONES)
+		for (uint32_t k = 0; k < 3; k++)
+			shift[k] = skeleton->positions[XSDK_AVATAR_BONE_ROOT][k] - file_float(b + 20 + 4 * k);
+	for (uint32_t f = 0; f < frames; f++) {
+		const uint8_t *in = b + FILE_HEADER_BYTES + frame_bytes * f;
+		XsdkAvatarBonePose *pose = animation->poses + (size_t)f * bones;
+		xsdk_avatar_pose_reset(pose, bones);
+		for (uint32_t i = 0; i < bones; i++) {
+			for (uint32_t k = 0; k < 4; k++)
+				pose[i].rotation[k] = file_float(in + 12 + 16 * i + 4 * k);
+			// Each frame on the side of the one before, so that interpolating takes the shorter way.
+			if (f && dot4(pose[i].rotation, pose[(int64_t)i - bones].rotation) < 0.0f)
+				for (uint32_t k = 0; k < 4; k++)
+					pose[i].rotation[k] = -pose[i].rotation[k];
+		}
+		float turned[3];
+		const float *q = pose[XSDK_AVATAR_BONE_ROOT].rotation;
+		// turned = q shift q*, by the rotation's matrix.
+		const float x = q[0], y = q[1], z = q[2], w = q[3];
+		const float m[3][3] = {
+			{ 1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w) },
+			{ 2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w) },
+			{ 2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y) },
+		};
+		for (uint32_t k = 0; k < 3; k++)
+			turned[k] = m[k][0] * shift[0] + m[k][1] * shift[1] + m[k][2] * shift[2];
+		for (uint32_t k = 0; k < 3; k++)
+			pose[XSDK_AVATAR_BONE_ROOT].translation[k] = file_float(in + 4 * k) + turned[k] - shift[k];
+	}
+	return XSDK_AVATAR_OK;
+}
+
 void xsdk_avatar_animation_free(XsdkAvatarAnimation *animation)
 {
 	free(animation->poses);

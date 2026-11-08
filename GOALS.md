@@ -115,21 +115,22 @@ the console through a PC tool:
    in the T-pose. Two sources:
    - a 360sona export (rigged, with numbered or humanoid bone names), if its rig matches the library's skeleton;
      to be checked against SPECS.md, section 4.4, before anything relies on it;
-   - our own rig exporter, a PC tool that builds the file from the developer's own console files (the stock pack),
-     so the workflow doesn't depend on a website. Planned as the fallback, and the first choice if 360sona's rig
-     doesn't match.
+   - our own rig exporter, which runs on the console and builds the file from its own files (the stock pack, and
+     the developer's avatar in its clothes), so the workflow doesn't depend on a website (built 2026-11-08,
+     SPECS.md section 4.9).
 2. **Animate** in the 3D program as usual, and export glTF.
 3. **Convert**: a PC tool reads the glTF, matches its bones to the library's by name or number, resamples the motion
    and writes the library's own animation format.
 4. **Play**: the game loads the file from its own data and plays it through the same player as stock animations,
    with the same cross-fades, queueing and layering.
 
-Decided for now (2026-11-06), both open to change:
+Decided (2026-11-06):
 
 - **The library's own animation format**, small and documented, rather than the console's animation block, whose
   last sections aren't decoded (SPECS.md, section 4.5). Writing the console's format could come later.
-- **cgltf** (single-file, MIT) for reading glTF in the PC converter: the project's first third-party code, recorded
-  in THIRD_PARTY_NOTICES.md, used only by the PC tool and never in the console library.
+- **The PC tools in Python, standard library only** (changed 2026-11-06, the user: "use python, no third party outside
+  of the xsdk"; first planned with cgltf): reading a GLB is a JSON chunk and a binary one, a few dozen lines, and
+  xsdk's own host tools are Python of the same kind. No third-party code in the project.
 
 Animations made from scratch on such a rig belong to their author and can ship with a game. Stock animations are
 always available to a game, played from the console's own files; what a game can't do is carry a copy of one,
@@ -190,7 +191,6 @@ src/avatar_*.c             one file per concern: pack, STFS, LZX, model, texture
 tests/                     PC tests and tools, run against the developer's own console files
 tools/                     console probes, the shader generator, and the PC animation tools (glTF converter, rig
                            exporter)
-third_party/               cgltf, for the PC animation tools only
 samples/                   small titles that show one thing each: show an avatar, animate it, several avatars,
                            a custom animation
 research/                  the Python prototypes behind SPECS.md (not part of the library)
@@ -211,27 +211,20 @@ The first release is done when:
 4. the PC tests pass on the user's console files;
 5. it builds as a companion library beside xsdk, laid out so that a later move into xsdk stays a copy.
 
-## 8. Where we are (2026-11-06, evening)
+## 8. Where we are (2026-11-06, night)
 
 - Done: reading the stock pack, item packages and the description; decoding meshes, textures and materials (C, tested
-  against the prototypes on the whole pack); the textured, coloured avatar on the console (milestone 5); the
-  avatar's skeleton, derived from the data, and skinning on the GPU (milestone 6); stock animations played,
-  looped and cross-faded on the console (milestone 7).
-- Built, waiting for its console run (milestone 8): the avatar layer of section 5 (load from a profile, a
-  description or stock parts; play, queue, update, set_transform, draw, draw_pose, info, close), the player in the
-  animation layer, the stock fallback for missing items, the C++ wrapper, a README and two samples (`hello`, and
-  `viewer` with several avatars, NPCs from description files, recorded drawing and cost measurements).
-- Built, waiting for the same console run (milestone 9, first part): the face. The expression frames worked out,
-  set per eye, eyebrow and mouth; blinking on its own; talking from a 0-1 level.
-- Built, waiting for its console run: a walk made in code (`xsdk_avatar_animation_walk`), standing in for the
-  library's own until milestone 11, and a first small game, `samples/store`: walk your avatar round the Avatar Thrift Store
-  among NPCs and emote from a wheel (stock avatars can now have faces: `xsdk_avatar_load_stock` takes face features).
-- Next: the faces the stock animations carry, if they can be decoded (the rest of milestone 9), then custom
-  animations (milestone 10) and the library's own walk, run, jump and sit (milestone 11). SPECS.md, section 6.2.
-  A first check for 4.5: compare a 360sona export's rig with the library's skeleton.
-- Built, waiting for its console run (2026-11-06, the user asked for better image quality): per-pixel lighting with a
-  light the title sets (direction, colour, sky and ground ambient, highlight), and anti-aliasing in the viewer
-  (2 or 4 samples a pixel, the screen drawn in bands).
+  against the prototypes on the whole pack); the textured, coloured avatar (milestone 5); the skeleton and skinning
+  on the GPU (6); stock animations played, looped and cross-faded (7); the avatar layer of section 5 with several
+  avatars and NPCs, the C++ wrapper, the README and samples (8); the face: expressions, blinking, talking (9). All
+  confirmed on the console, the last with `samples/store`.
+- Built along the way, confirmed with the store: per-pixel lighting with a light the title sets, anti-aliasing in
+  bands, a walk made in code (`xsdk_avatar_animation_walk`, standing in for the library's own until milestone 11),
+  stock avatars with faces, and `samples/store`: walk round the Avatar Thrift Store among NPCs, emote from a wheel,
+  snow falling outside the window.
+- Next: custom animations (milestone 10, section 4.5), then the library's own walk, run, jump and sit (11). A first
+  check for 4.5: compare a 360sona export's rig with the library's skeleton. Left open from milestone 9: whether the
+  stock animations carry face keys (SPECS.md, section 5.5).
 - Not yet in the avatar layer, from 4.1: the loading state (loads are synchronous), and the stock animations'
   lengths in the list (names only).
 - Known limits today: every avatar has the same height; a missing accessory is left out, not replaced; where a

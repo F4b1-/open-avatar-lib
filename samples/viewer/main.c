@@ -310,10 +310,13 @@ typedef struct {
 static uint32_t draw_bands(const Frame *f)
 {
 	const uint32_t rows = band_rows(f->width, f->height, f->samples);
+	// Every band's colour after a whole band's depth, so that the last, shorter band's colour never lies where the
+	// others keep depth (xsdk's own layout follows each target's size; the store's test run 6).
+	const uint32_t color_tile = xsdk_gpu_target_sample_tiles(f->width, rows, f->samples);
 	uint32_t bands = 0;
 	for (uint32_t top = 0; top < f->height; top += rows, bands++) {
 		const uint32_t band = f->height - top < rows ? f->height - top : rows;
-		xsdk_gpu_set_target_samples(f->width, band, f->samples);
+		xsdk_gpu_set_target_samples_at(f->width, band, f->samples, color_tile, 0);
 		xsdk_gpu_set_viewport(0.0f, -(float)top, (float)f->width, (float)f->height, 0.0f, 1.0f);
 		xsdk_gpu_set_depth_stencil(f->depth);
 		if (f->recording)

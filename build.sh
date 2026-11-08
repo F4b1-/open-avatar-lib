@@ -1,7 +1,7 @@
 #!/bin/bash
 # Builds the library and its samples with xsdk, or the PC tools, in WSL:
-#   ./build.sh [<xsdk checkout>]     build/console: libxsdk_avatar.a and the samples (viewer, hello, store .xex)
-#   ./build.sh pc [<xsdk checkout>]  build/pc: avatar_dump, player_check, walk_check, outfit_check, with the host gcc
+#   ./build.sh [<xsdk checkout>]     build/console: libxsdk_avatar.a and the samples (viewer, hello, store, rig_export .xex)
+#   ./build.sh pc [<xsdk checkout>]  build/pc: avatar_dump and the checks, with the host gcc
 # Uses Avatar Thrift Store's xsdk submodule unless another checkout is named, until this project has its own.
 set -euo pipefail
 
@@ -15,14 +15,15 @@ if [ "${1:-}" = pc ]; then
 	sources=("${sources[@]/%/.c}")
 	flags=(-std=c17 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src")
 	mkdir -p "$root/build/pc"
-	for tool in avatar_dump player_check walk_check; do
+	for tool in avatar_dump player_check walk_check anim_check; do
 		gcc "${flags[@]}" "${sources[@]}" "$root/tests/$tool.c" -lm -o "$root/build/pc/$tool"
 	done
-	# The avatar layer's loading half too, with xsdk's headers for its declarations and the console's file reads
-	# replaced by the test's.
-	gcc "${flags[@]}" -I"$xsdk/include" "${sources[@]}" "$root/src/avatar_outfit.c" "$root/tests/outfit_check.c" -lm \
+	# The avatar layer's loading half and the rig export too, with xsdk's headers for their declarations and the
+	# console's file reads replaced by the test's.
+	gcc "${flags[@]}" -I"$xsdk/include" "${sources[@]}" "$root/src/avatar_outfit.c" "$root/src/avatar_export.c" \
+		"$root/src/avatar_bake.c" "$root/src/avatar_png.c" "$root/tests/outfit_check.c" -lm \
 		-o "$root/build/pc/outfit_check"
-	echo "Built $root/build/pc/avatar_dump, player_check, walk_check and outfit_check"
+	echo "Built $root/build/pc/avatar_dump, player_check, walk_check, anim_check and outfit_check"
 	exit 0
 fi
 
@@ -32,4 +33,4 @@ make -s -C "$xsdk" build/libxsdk.a build/host/libxsc.so
 cmake -S "$root" -B "$root/build/console" -G Ninja -DCMAKE_BUILD_TYPE=Release \
 	-DCMAKE_TOOLCHAIN_FILE="$xsdk/cmake/xsdk.cmake"
 cmake --build "$root/build/console"
-echo "Built $root/build/console/samples: viewer/viewer.xex, hello/hello.xex, store/store.xex"
+echo "Built $root/build/console/samples: viewer/viewer.xex, hello/hello.xex, store/store.xex, rig_export/rig_export.xex"

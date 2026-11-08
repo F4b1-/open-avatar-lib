@@ -413,6 +413,13 @@ float xsdk_avatar_animation_length(const XsdkAvatarAnimation *animation);
 void xsdk_avatar_animation_sample(
 	const XsdkAvatarAnimation *animation, float seconds, bool loop, XsdkAvatarBonePose *pose);
 
+// An animation of the library's own (SPECS.md, section 4.8), made in a 3D program and converted by
+// tools/anim_convert.py: from bytes the title read from its own files. Its root moves about the rig's root; given
+// the skeleton of the avatar it is for (or NULL to take the rig's as it is), that motion is moved onto this
+// skeleton's root. Free it with xsdk_avatar_animation_free; play it like any other (xsdk_avatar_player_play).
+int xsdk_avatar_animation_load(
+	XsdkAvatarAnimation *animation, const void *bytes, uint32_t size_bytes, const XsdkAvatarSkeleton *skeleton);
+
 // A walk made in code, with no asset behind it (the stock animations have none; SPECS.md, section 4.5): one loop of
 // two steps. Each foot follows a gait (on the floor, moving back at the walking speed so that it doesn't slide;
 // landing on the heel, rolling off the toes, swinging forward clear of the floor) and the legs are solved to reach
@@ -533,6 +540,17 @@ int xsdk_avatar_load_description(XsdkAvatar **avatar, const void *bytes, uint32_
 // plain one without). Up to XSDK_AVATAR_ITEMS items and XSDK_AVATAR_FEATURES features.
 // XSDK_AVATAR_ERROR_NOT_FOUND if the pack has no part of a name given.
 int xsdk_avatar_load_stock(XsdkAvatar **avatar, const XsdkAvatarStockPart *parts, uint32_t count);
+
+// A rig to animate in a 3D program (SPECS.md, section 4.9): the avatar the three loads above give, as a glTF binary
+// (.glb) malloc'd into *glb, for the title to write to a file and free. The library's 71-bone skeleton in the T-pose
+// with every bone on the world axes, named as 360sona names them, and the avatar's parts skinned to it (what other
+// parts hide left out), each material's textures and colours baked into one PNG as the renderer mixes them (the
+// face's neutral frames; no reflection maps). tools/anim_convert.py turns an animation made on it into the library's
+// own file. Needs no GPU; takes a moment of CPU for the textures.
+int xsdk_avatar_export_profile(uint32_t user_index, void **glb, uint32_t *size_bytes);
+int xsdk_avatar_export_description(const void *bytes, uint32_t size_bytes, void **glb, uint32_t *glb_bytes);
+int xsdk_avatar_export_stock(const XsdkAvatarStockPart *parts, uint32_t count, void **glb, uint32_t *size_bytes);
+
 void xsdk_avatar_info(const XsdkAvatar *avatar, XsdkAvatarInfo *info);
 // Frees the avatar, after a fence past the last frame that drew it. NULL is ignored.
 void xsdk_avatar_close(XsdkAvatar *avatar);
