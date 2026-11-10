@@ -11,7 +11,6 @@
 // A prop's skeleton block (STRB block 5), little-endian: a header, two quantised groups (positions, then
 // rotations), then per bone a u8 parent and a value of each group, all one bit stream.
 enum {
-	BLOCK_SKELETON = 5,
 	SKELETON_HEADER_BYTES = 0x20,
 	SKELETON_BONE_COUNT_AT = 0x1C,
 	PARENT_BITS = 8,
@@ -25,7 +24,8 @@ static const uint8_t avatar_parents[XSDK_AVATAR_BONES] = {
 	XSDK_AVATAR_NO_PARENT,
 	0, 0, 0, 0,             // 1 BackLower, 2 HipLeft, 3 HipRight, 4 pelvis skin
 	1, 2, 2, 3, 3, 1,       // 5 BackUpper, 6 KneeLeft, 7 thigh, 8 KneeRight, 9 thigh, 10 lower spine
-	6, 5, 6, 5, 8, 5, 8, 5, // 11 AnkleLeft, 12 CollarLeft, 13 shin, 14 Neck, 15 AnkleRight, 16 CollarRight, 17 shin, 18 chest
+	6, 5, 6, 5,             // 11 AnkleLeft, 12 CollarLeft, 13 shin, 14 Neck,
+	8, 5, 8, 5,             // 15 AnkleRight, 16 CollarRight, 17 shin, 18 chest
 	14, 12, 11, 16, 15, 14, // 19 Head, 20 ShoulderLeft, 21 ToeLeft, 22 ShoulderRight, 23 ToeRight, 24 neck skin
 	20, 20, 20, 22, 22, 22, // 25 ElbowLeft, 26 upper arm, 27 twist, 28 ElbowRight, 29 upper arm, 30 twist
 	25, 25, 25, 28, 28, 28, // 31 forearm twist, 32 forearm, 33 WristLeft, 34, 35, 36 WristRight
@@ -157,7 +157,7 @@ int xsdk_avatar_skeleton_decode(XsdkAvatarSkeleton *skeleton, const void *strb, 
 	memset(skeleton, 0, sizeof *skeleton);
 	const uint8_t *block;
 	uint32_t bytes;
-	int result = avatar_find_block(strb, size_bytes, BLOCK_SKELETON, &block, &bytes);
+	int result = avatar_find_block(strb, size_bytes, AVATAR_BLOCK_SKELETON, &block, &bytes);
 	if (result != XSDK_AVATAR_OK)
 		return result;
 	if (bytes < SKELETON_HEADER_BYTES + GROUPS * QUANTISED_BYTES)

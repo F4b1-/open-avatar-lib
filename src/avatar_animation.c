@@ -16,7 +16,6 @@
 // rotation and scale, each a quantised group (AvatarQuantised: three axes as min + q * step * k). A rotation is a
 // quaternion's logarithm: the axis times half the angle.
 enum {
-	BLOCK_ANIMATION = 1,
 	HEADER_FRAMES_AT = 0,
 	HEADER_FPS_AT = 4,
 	HEADER_BONES_AT = 8,
@@ -107,7 +106,7 @@ int xsdk_avatar_animation_decode(XsdkAvatarAnimation *animation, const void *str
 	memset(animation, 0, sizeof *animation);
 	const uint8_t *block;
 	uint32_t bytes;
-	int result = avatar_find_block(strb, size_bytes, BLOCK_ANIMATION, &block, &bytes);
+	int result = avatar_find_block(strb, size_bytes, AVATAR_BLOCK_ANIMATION, &block, &bytes);
 	AnimationLayout layout;
 	if (result == XSDK_AVATAR_OK)
 		result = read_header(block, bytes, &layout);

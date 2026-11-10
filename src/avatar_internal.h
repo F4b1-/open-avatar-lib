@@ -278,37 +278,99 @@ void *avatar_realloc(void *pointer, size_t bytes, const char *what);
 // 0 (never) normally; N > 0 makes the Nth allocation from now fail, once. Counted per call of the three above.
 extern uint32_t avatar_alloc_fail_at;
 
+// ---- LZX (avatar_lzx.c) ----
+
 // Expands one LZX chunk (SPECS.md, section 3.2) into exactly out_bytes; 0 or an XSDK_AVATAR_ERROR_*.
 int avatar_lzx_expand(const uint8_t *in, uint32_t in_bytes, uint8_t *out, uint32_t out_bytes);
 
-#include "xsdk/avatar.h"
+// ---- STRB files (avatar_strb.c) ----
 
-// Finds the first block of an STRB file with this id: its data and size (avatar_model.c).
+// STRB block ids (SPECS.md, section 3.1).
+enum {
+	AVATAR_BLOCK_ANIMATION = 1,
+	AVATAR_BLOCK_TEXTURE = 2,
+	AVATAR_BLOCK_MODEL = 3,
+	AVATAR_BLOCK_SHAPE = 4,
+	AVATAR_BLOCK_SKELETON = 5,
+	AVATAR_BLOCK_COLORS = 7,
+};
+
+// Finds the first block of an STRB file with this id: *data points into file, *data_bytes its length.
+// XSDK_AVATAR_ERROR_NOT_FOUND if the file has none, _FORMAT if it isn't an STRB file.
 int avatar_find_block(const uint8_t *file, uint32_t size, uint32_t id, const uint8_t **data, uint32_t *data_bytes);
+// Expands a model or texture block's LZX chunks (section 3.2) into *out, malloc'd for the caller to free.
+int avatar_expand_block(const uint8_t *block, uint32_t block_bytes, uint8_t **out, uint32_t *out_bytes);
 
-// An STFS package being read (avatar_stfs.c).
+// ---- Packed vertices (avatar_model.c), as meshes and shape overrides store them (SPECS.md, sections 3.3, 3.7) ----
+//
+// A float header (f32 step, f32 minimum per axis), then a bit stream: each position axis's width (6 bits x 3), then
+// for each of four elements a u32 base and a u32 width. A vertex is then its quantised position (min + q * step * k)
+// and each element as (base + a `width`-bit value) mod 2^32.
+enum {
+	AVATAR_ELEMENT_NORMAL,  // 11:11:10 signed, x in the low bits
+	AVATAR_ELEMENT_WEIGHTS, // four bytes, the first in the low byte, summing to 255
+	AVATAR_ELEMENT_BONES,   // four bytes: bone indices, as the weights
+	AVATAR_ELEMENT_COLOR,   // ARGB
+	AVATAR_ELEMENTS,
+};
+
+typedef struct {
+	float step;
+	float min[3];
+	uint32_t position_width[3];
+	uint32_t base[AVATAR_ELEMENTS];
+	uint32_t width[AVATAR_ELEMENTS];
+	uint32_t bits;            // a vertex's bits: its position and elements (texture coordinates come after, in a mesh)
+	uint64_t first_vertex;    // the bit where the first vertex starts
+} AvatarVertexFormat;
+
+// Reads the format whose float header is at byte `at` of data. XSDK_AVATAR_ERROR_FORMAT if it runs past `bytes` or an
+// element is wider than a word.
+int avatar_read_vertex_format(const uint8_t *data, uint32_t bytes, uint32_t at, AvatarVertexFormat *format);
+// One vertex from the bit stream at *at (moved past it): its position, unit normal, colour, and weights and bones
+// (NULL to skip them).
+void avatar_decode_vertex(const uint8_t *data, uint64_t *at, const AvatarVertexFormat *format, float position[3],
+	float normal[3], uint32_t *color, uint8_t weights[4], uint8_t bones[4]);
+
+// ---- Textures (avatar_texture.c) ----
+
+enum { AVATAR_TEXTURE_HEADER_BYTES = 33 };
+
+// Reads a 33-byte texture header (SPECS.md, section 3.4) into texture (no pixels yet); *empty gets whether it is an
+// empty slot, whose pixels the Head's face features fill at run time.
+int avatar_parse_texture_header(const uint8_t *header, XsdkAvatarTexture *texture, bool *empty);
+// Copies the texture's pixels (frame_count * frame_bytes) from data[at], within bytes, into texture->data.
+int avatar_copy_texture_pixels(XsdkAvatarTexture *texture, const uint8_t *data, uint32_t bytes, uint32_t at);
+
+// ---- STFS packages (avatar_stfs.c) ----
+
+// An STFS package being read.
 typedef struct {
 	XsdkAvatarRead read;
 	void *context;
-	uint32_t base;  // the first data block's offset
-	uint32_t shift; // 1 if each hash table has two copies
-	uint32_t step[2];
-	uint32_t allocated;
-	uint32_t top_level;
-	uint64_t top_table;
-	uint32_t table_blocks;
-	uint32_t table_block;
+	uint32_t base;  // the first data block's offset: the header, rounded up to a block
+	uint32_t shift; // 1 if each hash table has two copies (each takes two blocks), else 0
+	uint32_t step[2]; // how far apart level-0 and level-1 hash tables lie, in blocks
+	uint32_t allocated; // blocks in use
+	uint32_t top_level; // the highest hash table level: 0, 1 or 2
+	uint64_t top_table; // its offset
+	uint32_t table_blocks; // the file table's length in blocks
+	uint32_t table_block;  // its first block
 } AvatarStfs;
 
+// A file in a package, as its file table entry gives it.
 typedef struct {
-	bool consecutive;
-	uint32_t start;
+	bool consecutive; // stored in consecutive blocks (else a chain the hash tables link)
+	uint32_t start;   // its first block
 	uint32_t blocks;
 	uint32_t bytes;
 } AvatarStfsFile;
 
+// Reads the package's header through read. XSDK_AVATAR_ERROR_READ if read fails, _FORMAT if it isn't STFS.
 int avatar_stfs_open(AvatarStfs *stfs, XsdkAvatarRead read, void *context);
+// The offset in the package of data block `block`, past the hash tables before it.
 uint64_t avatar_stfs_block_offset(const AvatarStfs *stfs, uint32_t block);
+// The offset of the hash table at `level` (0-2) that covers data block `block` (its first copy).
 uint64_t avatar_stfs_table_offset(const AvatarStfs *stfs, uint32_t level, uint32_t block);
 // Finds a file in the package's root folder, by name, ignoring case.
 int avatar_stfs_find(const AvatarStfs *stfs, const char *name, AvatarStfsFile *file);

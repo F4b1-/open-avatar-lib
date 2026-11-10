@@ -10,7 +10,7 @@ root="$(cd "$(dirname "$0")" && pwd)"
 if [ "${1:-}" = pc ]; then
 	xsdk="${2:-$root/../avatar_thrift_store/third_party/xsdk}"
 	# The asset and animation layers: the files that build for the PC.
-	portable=(alloc animation description lzx model pack player skeleton stfs own_animations)
+	portable=(alloc animation description lzx model pack player shape skeleton stfs strb texture own_animations)
 	sources=("${portable[@]/#/$root/src/avatar_}")
 	sources=("${sources[@]/%/.c}")
 	mkdir -p "$root/build/pc/generated"
