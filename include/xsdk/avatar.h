@@ -7,7 +7,15 @@
 //   a callback and allocates with malloc;
 // - the animation layer: poses, blending, skin matrices and a player that turns animations into poses (PC too);
 // - the avatar layer (XsdkAvatar, console only): load an avatar, play animations, draw it in the title's own pass.
-// Results are 0 (XSDK_AVATAR_OK) or a negative XSDK_AVATAR_ERROR_*.
+//
+// What holds for every call, so each function's comment says only what differs:
+// - Results are 0 (XSDK_AVATAR_OK) or a negative XSDK_AVATAR_ERROR_*; XSDK_AVATAR_ERROR_MEMORY when the heap runs out.
+// - Pointers must not be NULL unless a function's comment says what NULL means.
+// - A *_decode or *_load allocates what its struct points to; the matching *_free frees it and zeroes the struct,
+//   so freeing twice, or freeing a struct whose decode failed (it is left empty), is harmless.
+// - One thread at a time: the library keeps state (the stock pack, the shaders, the light) without locks.
+// - Units: metres, seconds, radians unless a comment says degrees; the avatar's space is y up, facing +z; matrices
+//   are 16 floats, column-major, for column vectors (p' = M p).
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -33,20 +41,30 @@ typedef int (*XsdkAvatarRead)(void *context, uint64_t offset, void *buffer, uint
 // The stock asset pack, AvatarAssetPack.toc inside the system package FFFE07DF00000002 (an STFS package).
 typedef struct XsdkAvatarPack XsdkAvatarPack;
 
-// Opens the package that read reads; keeps read and context until xsdk_avatar_pack_close.
+// Opens the stock pack inside the package that read reads (FFFE07DF00000002, an STFS package) and reads its table of
+// records; the records' files are read later, on demand. read and context are kept until xsdk_avatar_pack_close.
+// *pack is NULL on an error: XSDK_AVATAR_ERROR_READ if read fails, _FORMAT if it isn't such a package,
+// _NOT_FOUND if the package has no AvatarAssetPack.toc, _UNSUPPORTED if that file isn't stored in one run of blocks.
 int xsdk_avatar_pack_open(XsdkAvatarPack **pack, XsdkAvatarRead read, void *context);
+// Closes the pack and frees it; the names it gave out are freed with it. NULL is ignored.
 void xsdk_avatar_pack_close(XsdkAvatarPack *pack);
+// How many records the pack has, empty ones included: index runs from 0 to this less 1.
 uint32_t xsdk_avatar_pack_count(const XsdkAvatarPack *pack);
-// The record's English name in UTF-8 (ASCII in the stock pack), or "" for an empty record.
+// The record's English name in UTF-8 (ASCII in the stock pack); "" for an empty record or an index past the end. The
+// string belongs to the pack.
 const char *xsdk_avatar_pack_name(const XsdkAvatarPack *pack, uint32_t index);
-// The record's STRB size in bytes; 0 for an empty record.
+// The record's STRB size in bytes; 0 for an empty record or an index past the end.
 uint32_t xsdk_avatar_pack_asset_size(const XsdkAvatarPack *pack, uint32_t index);
-// The first record with this English name.
+// The first record with this English name, exactly as xsdk_avatar_pack_name gives it, in *index.
+// XSDK_AVATAR_ERROR_NOT_FOUND if none has it (*index unchanged).
 int xsdk_avatar_pack_find(const XsdkAvatarPack *pack, const char *name, uint32_t *index);
-// Reads the record's STRB file into a buffer of xsdk_avatar_pack_asset_size bytes.
+// Reads the record's STRB file into buffer, which holds xsdk_avatar_pack_asset_size bytes.
+// XSDK_AVATAR_ERROR_NOT_FOUND for an empty record or an index past the end, XSDK_AVATAR_ERROR_READ if read fails.
 int xsdk_avatar_pack_read_asset(const XsdkAvatarPack *pack, uint32_t index, void *buffer);
 
-// Reads a file from the root folder of an STFS package (an item package's asset_v2.bin, say) into a malloc'd buffer.
+// Reads a file from the root folder of an STFS package (an item package's asset_v2.bin, say), its name matched
+// ignoring case, into *data, malloc'd for the caller to free, and its size into *size_bytes.
+// XSDK_AVATAR_ERROR_NOT_FOUND if the package has no such file, _READ if read fails, _FORMAT if it isn't a package.
 int xsdk_avatar_package_read_file(
 	XsdkAvatarRead read, void *context, const char *name, void **data, uint32_t *size_bytes);
 
@@ -92,6 +110,9 @@ typedef struct {
 	XsdkAvatarItem under[XSDK_AVATAR_UNDER_ITEMS];
 } XsdkAvatarDescription;
 
+// Reads a profile's avatar description (XSDK_AVATAR_DESCRIPTION_BYTES, as a profile or 360sona stores it) into a
+// struct: its features and items with their ids, its colours, its height and weight. Allocates nothing.
+// XSDK_AVATAR_ERROR_FORMAT if bytes are too few or name no item.
 int xsdk_avatar_description_parse(XsdkAvatarDescription *description, const void *bytes, uint32_t size_bytes);
 // Whether the id names a stock asset, and its record in the pack; else it names an item package.
 bool xsdk_avatar_id_is_stock(const uint8_t *id, uint32_t *record);
@@ -128,8 +149,9 @@ enum {
 	XSDK_AVATAR_EITHER = 3,
 };
 
-// The record's component mask (XSDK_AVATAR_SLOT_*) and gender (XSDK_AVATAR_MALE, ...); 0 for an empty record.
+// The record's component mask, the slots it fills (XSDK_AVATAR_SLOT_*); 0 for an empty record or an index past the end.
 uint32_t xsdk_avatar_pack_mask(const XsdkAvatarPack *pack, uint32_t index);
+// The record's gender (XSDK_AVATAR_MALE, _FEMALE or _EITHER); 0 for an empty record or an index past the end.
 uint32_t xsdk_avatar_pack_gender(const XsdkAvatarPack *pack, uint32_t index);
 // The id a description gives the record (SPECS.md, section 4.6): its mask, index and gender, then the stock tail.
 void xsdk_avatar_pack_stock_id(const XsdkAvatarPack *pack, uint32_t index, uint8_t id[XSDK_AVATAR_ID_BYTES]);
@@ -155,6 +177,7 @@ typedef struct {
 // Decodes the shape override block of an STRB file: a template or face shape from the pack, or an item's own
 // (marketplace items carry theirs). XSDK_AVATAR_ERROR_NOT_FOUND if the file has none.
 int xsdk_avatar_shape_decode(XsdkAvatarShape *shape, const void *strb, uint32_t size_bytes);
+// Frees what xsdk_avatar_shape_decode allocated and zeroes the shape.
 void xsdk_avatar_shape_free(XsdkAvatarShape *shape);
 
 // One mesh of a model, decoded: positions in metres, y up, the avatar facing +z (SPECS.md, section 3.3).
@@ -300,6 +323,7 @@ typedef struct {
 // A model with no meshes (Bald) decodes to zero meshes, textures and materials. XSDK_AVATAR_ERROR_NOT_FOUND if the
 // file has no model block.
 int xsdk_avatar_model_decode(XsdkAvatarModel *model, const void *strb, uint32_t size_bytes);
+// Frees what xsdk_avatar_model_decode allocated (meshes, textures, materials, colour table) and zeroes the model.
 void xsdk_avatar_model_free(XsdkAvatarModel *model);
 // The material's parameter with this id, or NULL.
 const XsdkAvatarParameter *xsdk_avatar_material_parameter(const XsdkAvatarMaterial *material, uint32_t id);
@@ -311,6 +335,7 @@ int xsdk_avatar_shape_apply(const XsdkAvatarShape *shape, XsdkAvatarModel *targe
 // Decodes the texture block of an STRB file: a face feature from the pack (eyebrows, eyes, mouth, ...), DXT5.
 // XSDK_AVATAR_ERROR_NOT_FOUND if the file has no texture block.
 int xsdk_avatar_texture_decode(XsdkAvatarTexture *texture, const void *strb, uint32_t size_bytes);
+// Frees the texture's pixels and zeroes the texture.
 void xsdk_avatar_texture_free(XsdkAvatarTexture *texture);
 
 // Skeletons (SPECS.md, section 4.4). No asset holds the avatar's: it is a table of this library's, derived from the
@@ -404,6 +429,8 @@ typedef struct {
 
 // Decodes the animation block of an STRB file. XSDK_AVATAR_ERROR_NOT_FOUND if it has none.
 int xsdk_avatar_animation_decode(XsdkAvatarAnimation *animation, const void *strb, uint32_t size_bytes);
+// Frees the poses of an animation decoded or loaded (any of the loads below) and zeroes it. Not for stock animations
+// from xsdk_avatar_stock_animation, which the library keeps.
 void xsdk_avatar_animation_free(XsdkAvatarAnimation *animation);
 // Its length in seconds, (frame_count - 1) / frames_per_second: in a looping animation the last frame repeats the
 // first, so playing it in a loop wraps at this length.
@@ -500,7 +527,9 @@ void xsdk_avatar_player_pose(const XsdkAvatarPlayer *player, XsdkAvatarBonePose 
 //
 // Loads go after xsdk_gpu_open and are synchronous: they read the stock pack and item packages, decode, and upload
 // to GPU memory (tens of milliseconds an avatar). The first load opens the stock pack and loads the shaders, which
-// stay until xsdk_avatar_shutdown. One thread at a time.
+// stay until xsdk_avatar_shutdown. One thread at a time. A load that fails leaves *avatar NULL, logs why, and
+// returns XSDK_AVATAR_ERROR_READ if the console's files can't be read, _FORMAT if one isn't understood, _GPU if the
+// GPU layer refuses the shaders or a texture; an item the console lacks is no error (XsdkAvatarInfo counts it).
 //
 // Matrices are 16 floats, column-major, for column vectors (p' = M p), as GLSL has them. The avatar's own space is
 // metres, y up, facing +z, its feet at y 0.
@@ -559,11 +588,16 @@ int xsdk_avatar_load_stock(XsdkAvatar **avatar, const XsdkAvatarStockPart *parts
 // with every bone on the world axes, named as 360sona names them, and the avatar's parts skinned to it (what other
 // parts hide left out), each material's textures and colours baked into one PNG as the renderer mixes them (the
 // face's neutral frames; no reflection maps). tools/anim_convert.py turns an animation made on it into the library's
-// own file. Needs no GPU; takes a moment of CPU for the textures.
+// own file. Needs no GPU; takes a moment of CPU for the textures. On an error *glb is NULL and its size 0; the
+// errors are the matching load's.
+// The signed-in profile's avatar at user_index (0-3), as xsdk_avatar_load_profile.
 int xsdk_avatar_export_profile(uint32_t user_index, void **glb, uint32_t *size_bytes);
+// The avatar a saved description gives, as xsdk_avatar_load_description; the .glb's size in *glb_bytes.
 int xsdk_avatar_export_description(const void *bytes, uint32_t size_bytes, void **glb, uint32_t *glb_bytes);
+// An avatar of stock parts, as xsdk_avatar_load_stock.
 int xsdk_avatar_export_stock(const XsdkAvatarStockPart *parts, uint32_t count, void **glb, uint32_t *size_bytes);
 
+// What the avatar is made of and what it takes (XsdkAvatarInfo), as it was when it loaded.
 void xsdk_avatar_info(const XsdkAvatar *avatar, XsdkAvatarInfo *info);
 // Frees the avatar, after a fence past the last frame that drew it. NULL is ignored.
 void xsdk_avatar_close(XsdkAvatar *avatar);
@@ -621,15 +655,22 @@ typedef struct {
 	float highlight; // the highlight's strength, 0 for none; it shows towards the camera
 } XsdkAvatarLight;
 
-// The light avatars have until a title sets one: from the upper left, in front.
+// The light avatars have until a title sets one: from the upper left, in front. Copies it into *light, as a start for
+// a light of the title's own.
 void xsdk_avatar_default_light(XsdkAvatarLight *light);
+// Sets the light every avatar is drawn with, from the next draw on, until it is set again (the library keeps a copy).
+// It goes into each draw's constants, so a command buffer keeps the light of the moment it was recorded; avatars
+// lit differently in one frame need a set_light before each one's draw.
 void xsdk_avatar_set_light(const XsdkAvatarLight *light);
 
 // A stock animation by name, decoded on first use and kept, shared by every avatar and player, until
 // xsdk_avatar_shutdown.
 int xsdk_avatar_stock_animation(const char *name, const XsdkAvatarAnimation **animation);
-// The stock animations' names, in pack order: 60 on the consoles seen. 0 if the stock pack can't be read.
+// How many stock animations there are: 60 on the consoles seen; 0 if the stock pack can't be read. The first call
+// opens the stock pack.
 uint32_t xsdk_avatar_stock_animation_count(void);
+// The stock animation's name at index (0 to the count less 1), in pack order, for xsdk_avatar_stock_animation or
+// xsdk_avatar_play; "" past the end. The string belongs to the library until xsdk_avatar_shutdown.
 const char *xsdk_avatar_stock_animation_name(uint32_t index);
 
 // Frees the stock animations, closes the stock pack and frees the shaders; after every avatar is closed. A later
