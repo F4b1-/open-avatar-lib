@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "avatar_internal.h"
 #include "avatar_runtime.h"
 #include "xsdk/kernel.h"
 #include "xsdk/log.h"
@@ -90,21 +91,31 @@ int avatar_content_pack(const XsdkAvatarPack **out)
 	return XSDK_AVATAR_OK;
 }
 
-void *avatar_content_read_stock(uint32_t record, uint32_t *size_bytes)
+int avatar_content_read_stock(uint32_t record, void **strb, uint32_t *size_bytes)
 {
+	*strb = NULL;
 	*size_bytes = xsdk_avatar_pack_asset_size(pack, record);
-	void *strb = *size_bytes ? malloc(*size_bytes) : NULL;
-	if (!strb || xsdk_avatar_pack_read_asset(pack, record, strb) != XSDK_AVATAR_OK) {
-		xsdk_log_write("avatar: stock record %u (%s) can't be read", (unsigned)record,
-			xsdk_avatar_pack_name(pack, record));
-		free(strb);
-		return NULL;
+	if (!*size_bytes) {
+		xsdk_log_write("avatar: stock record %u (%s) has no asset", (unsigned)record, xsdk_avatar_pack_name(pack, record));
+		return XSDK_AVATAR_ERROR_NOT_FOUND;
 	}
-	return strb;
+	void *data = avatar_malloc(*size_bytes, "a stock asset");
+	if (!data)
+		return XSDK_AVATAR_ERROR_MEMORY;
+	const int result = xsdk_avatar_pack_read_asset(pack, record, data);
+	if (result != XSDK_AVATAR_OK) {
+		xsdk_log_write("avatar: stock record %u (%s) can't be read (%d)", (unsigned)record,
+			xsdk_avatar_pack_name(pack, record), result);
+		free(data);
+		return result;
+	}
+	*strb = data;
+	return XSDK_AVATAR_OK;
 }
 
-void *avatar_content_read_item(const uint8_t *id, uint32_t *size_bytes)
+int avatar_content_read_item(const uint8_t *id, void **strb, uint32_t *size_bytes)
 {
+	*strb = NULL;
 	char name[33];
 	uint32_t title;
 	xsdk_avatar_id_package_name(id, name, &title);
@@ -114,18 +125,17 @@ void *avatar_content_read_item(const uint8_t *id, uint32_t *size_bytes)
 		HANDLE handle;
 		if (!NT_SUCCESS(open_read(&handle, path)))
 			continue;
-		void *strb;
-		const int result = xsdk_avatar_package_read_file(read_handle, &handle, "asset_v2.bin", &strb, size_bytes);
+		const int result = xsdk_avatar_package_read_file(read_handle, &handle, "asset_v2.bin", strb, size_bytes);
 		(void)NtClose(handle);
 		if (result != XSDK_AVATAR_OK) {
 			xsdk_log_write("avatar: %s: asset_v2.bin can't be read (%d)", path, result);
-			return NULL;
+			return result;
 		}
 		xsdk_log_write("avatar: item %s from %s", name, path);
-		return strb;
+		return XSDK_AVATAR_OK;
 	}
 	xsdk_log_write("avatar: item %s (title %08X): not on this console", name, (unsigned)title);
-	return NULL;
+	return XSDK_AVATAR_ERROR_NOT_FOUND;
 }
 
 int avatar_content_read_profile(uint32_t user_index, uint8_t bytes[XSDK_AVATAR_DESCRIPTION_BYTES])
@@ -174,9 +184,10 @@ int xsdk_avatar_stock_animation(const char *name, const XsdkAvatarAnimation **an
 			continue;
 		if (!animations[a].frame_count) {
 			uint32_t size;
-			void *strb = avatar_content_read_stock(animation_records[a], &size);
-			if (!strb)
-				return XSDK_AVATAR_ERROR_READ;
+			void *strb;
+			result = avatar_content_read_stock(animation_records[a], &strb, &size);
+			if (result != XSDK_AVATAR_OK)
+				return result;
 			result = xsdk_avatar_animation_decode(&animations[a], strb, size);
 			free(strb);
 			if (result != XSDK_AVATAR_OK) {

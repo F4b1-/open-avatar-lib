@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "avatar_internal.h"
 #include "avatar_runtime.h"
 #include "xsdk/log.h"
 
@@ -125,8 +126,8 @@ static int load(XsdkAvatar **out, const XsdkAvatarDescription *d)
 	int result = avatar_render_open();
 	if (result != XSDK_AVATAR_OK)
 		return result;
-	AvatarOutfit *outfit = malloc(sizeof *outfit);
-	XsdkAvatar *avatar = calloc(1, sizeof *avatar);
+	AvatarOutfit *outfit = avatar_malloc(sizeof *outfit, "an avatar");
+	XsdkAvatar *avatar = avatar_calloc(1, sizeof *avatar, "an avatar");
 	if (!outfit || !avatar) {
 		free(outfit);
 		free(avatar);

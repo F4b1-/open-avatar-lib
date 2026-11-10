@@ -7,29 +7,39 @@
 #include <stddef.h>
 #include <stdlib.h>
 
+#include "avatar_internal.h"
 #include "avatar_clips.h"
 #include "xsdk/avatar.h"
+
+static int measure_ground_speed(const XsdkAvatarAnimation *walk, const XsdkAvatarSkeleton *skeleton, float *speed);
+
+// Loads the body's clip of a walk or a run and, if asked, measures its speed; a measure that runs out of memory fails
+// the load (an animation with a speed of 0 would play at the wrong pace without a word).
+static int load_with_speed(XsdkAvatarAnimation *animation, uint32_t gender, const uint8_t *male, uint32_t male_size,
+	const uint8_t *female, uint32_t female_size, const XsdkAvatarSkeleton *skeleton, float *speed)
+{
+	const bool is_female = gender == XSDK_AVATAR_FEMALE;
+	int result = xsdk_avatar_animation_load(
+		animation, is_female ? female : male, is_female ? female_size : male_size, skeleton);
+	if (result == XSDK_AVATAR_OK && speed)
+		result = measure_ground_speed(animation, skeleton, speed);
+	if (result != XSDK_AVATAR_OK)
+		xsdk_avatar_animation_free(animation);
+	return result;
+}
 
 int xsdk_avatar_animation_load_walk(
 	XsdkAvatarAnimation *walk, uint32_t gender, const XsdkAvatarSkeleton *skeleton, float *speed)
 {
-	const int female = gender == XSDK_AVATAR_FEMALE;
-	const int result = xsdk_avatar_animation_load(walk, female ? clip_walk_female : clip_walk_male,
-		female ? clip_walk_female_size : clip_walk_male_size, skeleton);
-	if (result == XSDK_AVATAR_OK && speed)
-		*speed = xsdk_avatar_animation_ground_speed(walk, skeleton);
-	return result;
+	return load_with_speed(walk, gender, clip_walk_male, clip_walk_male_size, clip_walk_female, clip_walk_female_size,
+		skeleton, speed);
 }
 
 int xsdk_avatar_animation_load_run(
 	XsdkAvatarAnimation *run, uint32_t gender, const XsdkAvatarSkeleton *skeleton, float *speed)
 {
-	const int female = gender == XSDK_AVATAR_FEMALE;
-	const int result = xsdk_avatar_animation_load(run, female ? clip_run_female : clip_run_male,
-		female ? clip_run_female_size : clip_run_male_size, skeleton);
-	if (result == XSDK_AVATAR_OK && speed)
-		*speed = xsdk_avatar_animation_ground_speed(run, skeleton);
-	return result;
+	return load_with_speed(run, gender, clip_run_male, clip_run_male_size, clip_run_female, clip_run_female_size,
+		skeleton, speed);
 }
 
 int xsdk_avatar_animation_load_jump(XsdkAvatarAnimation *jump, uint32_t gender, const XsdkAvatarSkeleton *skeleton)
@@ -59,11 +69,14 @@ static int by_value(const void *a, const void *b)
 	return (x > y) - (x < y);
 }
 
-float xsdk_avatar_animation_ground_speed(const XsdkAvatarAnimation *walk, const XsdkAvatarSkeleton *skeleton)
+// The measure; XSDK_AVATAR_ERROR_MEMORY if it can't allocate its list of moves, else OK and *speed (0 if no foot is
+// on the floor two frames running).
+static int measure_ground_speed(const XsdkAvatarAnimation *walk, const XsdkAvatarSkeleton *skeleton, float *out)
 {
+	*out = 0.0f;
 	if (!walk || !skeleton || walk->frame_count < 2 || walk->bone_count != XSDK_AVATAR_BONES ||
 		skeleton->bone_count != XSDK_AVATAR_BONES)
-		return 0.0f;
+		return XSDK_AVATAR_OK;
 	static const uint32_t ankles[2] = { XSDK_AVATAR_BONE_ANKLE_LEFT, XSDK_AVATAR_BONE_ANKLE_RIGHT };
 	static const uint32_t toes[2] = { XSDK_AVATAR_BONE_TOE_LEFT, XSDK_AVATAR_BONE_TOE_RIGHT };
 	float sole[2][2][3];
@@ -74,11 +87,12 @@ float xsdk_avatar_animation_ground_speed(const XsdkAvatarAnimation *walk, const 
 			sole[s][p][1] = 0.0f;
 			sole[s][p][2] = joint[2];
 		}
-	float *moves = malloc(sizeof(float) * 4 * walk->frame_count);
+	// Up to one move a frame for each of the four sole points.
+	float *moves = avatar_malloc(sizeof(float) * 4 * walk->frame_count, "a walk speed measure");
 	if (!moves)
-		return 0.0f;
+		return XSDK_AVATAR_ERROR_MEMORY;
 	uint32_t count = 0;
-	static float m[XSDK_AVATAR_BONES][12];
+	float m[XSDK_AVATAR_BONES][12];
 	float before[2][2][3];
 	for (uint32_t f = 0; f < walk->frame_count; f++) {
 		xsdk_avatar_skin_matrices(skeleton, walk->poses + (size_t)f * walk->bone_count, m);
@@ -99,5 +113,13 @@ float xsdk_avatar_animation_ground_speed(const XsdkAvatarAnimation *walk, const 
 			walk->frames_per_second;
 	}
 	free(moves);
+	*out = speed;
+	return XSDK_AVATAR_OK;
+}
+
+float xsdk_avatar_animation_ground_speed(const XsdkAvatarAnimation *walk, const XsdkAvatarSkeleton *skeleton)
+{
+	float speed;
+	(void)measure_ground_speed(walk, skeleton, &speed); // 0 if it runs out of memory, as avatar.h says
 	return speed;
 }

@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "avatar_internal.h"
 #include "avatar_runtime.h"
 #include "xsdk/log.h"
 
@@ -104,7 +105,7 @@ static bool reserve(Buffer *b, size_t more)
 	size_t capacity = b->capacity ? b->capacity : 4096;
 	while (capacity < b->length + more)
 		capacity *= 2;
-	char *data = realloc(b->data, capacity);
+	char *data = avatar_realloc(b->data, capacity, "an export");
 	if (!data) {
 		b->failed = true;
 		return false;
@@ -218,8 +219,8 @@ static bool add_mesh(Gltf *g, const XsdkAvatarMesh *mesh, const uint8_t *hidden,
 	uint32_t uv_set)
 {
 	const uint32_t n = mesh->vertex_count;
-	uint16_t *indices = malloc(mesh->index_count ? mesh->index_count * 2u : 2u);
-	uint8_t *joints = malloc(n ? n * 4u : 4u), *weights = malloc(n ? n * 4u : 4u);
+	uint16_t *indices = avatar_malloc(mesh->index_count ? mesh->index_count * 2u : 2u, "an export");
+	uint8_t *joints = avatar_malloc(n ? n * 4u : 4u, "an export"), *weights = avatar_malloc(n ? n * 4u : 4u, "an export");
 	if (!indices || !joints || !weights) {
 		free(indices);
 		free(joints);
@@ -266,7 +267,7 @@ static bool add_mesh(Gltf *g, const XsdkAvatarMesh *mesh, const uint8_t *hidden,
 	char texcoord[40] = "";
 	if (uv_set != NO_TEXCOORD && mesh->uv_sets) {
 		const uint32_t set = uv_set < mesh->uv_sets ? uv_set : 0;
-		float *uvs = malloc((size_t)n * 8);
+		float *uvs = avatar_malloc((size_t)n * 8, "an export");
 		if (uvs) {
 			for (uint32_t v = 0; v < n; v++)
 				memcpy(uvs + 2 * v, mesh->uvs + 2 * ((size_t)mesh->uv_sets * v + set), 8);
@@ -335,7 +336,7 @@ static void add_parts(Gltf *g, const AvatarOutfit *outfit)
 			triangles += model->meshes[m].index_count / 3;
 		if (!triangles)
 			continue;
-		uint8_t *hidden = malloc(triangles);
+		uint8_t *hidden = avatar_malloc(triangles, "an export");
 		if (!hidden) {
 			g->bin.failed = true;
 			return;
@@ -348,7 +349,13 @@ static void add_parts(Gltf *g, const AvatarOutfit *outfit)
 		const uint32_t materials = model->material_count ? model->material_count : 1;
 		for (uint32_t k = 0; k < materials; k++) {
 			AvatarBake bake;
-			const bool textured = avatar_bake_material(part, k, hidden, &bake) == XSDK_AVATAR_OK;
+			const int baked = avatar_bake_material(part, k, hidden, &bake);
+			if (baked == XSDK_AVATAR_ERROR_MEMORY) { // not a plain material instead: the export fails
+				g->bin.failed = true;
+				free(hidden);
+				return;
+			}
+			const bool textured = baked == XSDK_AVATAR_OK;
 			const uint32_t material = g->materials.count;
 			bool any = false;
 			for (uint32_t m = 0, triangle = 0; m < model->mesh_count; m++) {
@@ -359,8 +366,11 @@ static void add_parts(Gltf *g, const AvatarOutfit *outfit)
 			}
 			uint8_t *png = NULL;
 			uint32_t png_bytes = 0;
-			if (any && textured && avatar_png_encode(bake.rgba, bake.width, bake.height, &png, &png_bytes) ==
-					XSDK_AVATAR_OK) {
+			const int encoded = any && textured ? avatar_png_encode(bake.rgba, bake.width, bake.height, &png, &png_bytes)
+												: XSDK_AVATAR_ERROR_NOT_FOUND;
+			if (encoded == XSDK_AVATAR_ERROR_MEMORY)
+				g->bin.failed = true;
+			if (encoded == XSDK_AVATAR_OK) {
 				const uint32_t view = add_view(g, png, png_bytes, 0, 1);
 				item(&g->images, "{\"name\":\"%s %u\",\"bufferView\":%u,\"mimeType\":\"image/png\"}", name,
 					(unsigned)k, (unsigned)view);
@@ -372,7 +382,7 @@ static void add_parts(Gltf *g, const AvatarOutfit *outfit)
 					name, (unsigned)k, (unsigned)g->textures.count - 1,
 					bake.see_through ? ",\"alphaMode\":\"BLEND\"" : "");
 			} else if (any) {
-				// No texture to bake (or no room): the part's first colour, as before textures.
+				// No texture to bake: the part's first colour, as before textures.
 				const float *c = part->is_head ? part->skin : part->tinted ? part->colors[0] : plain_grey;
 				item(&g->materials,
 					"{\"name\":\"%s %u\",\"pbrMetallicRoughness\":{\"baseColorFactor\":[%.4f,%.4f,%.4f,1],"
@@ -426,9 +436,10 @@ int avatar_export_outfit(const AvatarOutfit *outfit, void **glb, uint32_t *size_
 	}
 	append(&pictures, "", 1);
 	Buffer json = { 0 };
-	const bool built = !g.bin.failed && !g.views.failed && !g.accessors.failed && !g.primitives.failed &&
-		!g.materials.failed && !g.nodes.failed && !g.images.failed && !g.textures.failed && !pictures.failed &&
-		!joints.failed && g.primitives.count;
+	const bool out_of_memory = g.bin.failed || g.views.failed || g.accessors.failed || g.primitives.failed ||
+		g.materials.failed || g.nodes.failed || g.images.failed || g.textures.failed || pictures.failed ||
+		joints.failed;
+	const bool built = !out_of_memory && g.primitives.count;
 	if (built)
 		text(&json,
 			"{\"asset\":{\"version\":\"2.0\",\"generator\":\"xsdk avatar library\"},"
@@ -445,8 +456,8 @@ int avatar_export_outfit(const AvatarOutfit *outfit, void **glb, uint32_t *size_
 	free(joints.data);
 	free(pictures.data);
 	if (!built || json.failed) {
-		// Nothing to show (every part hidden or empty) is a format error, else memory ran out.
-		const int result = g.primitives.count ? XSDK_AVATAR_ERROR_MEMORY : XSDK_AVATAR_ERROR_FORMAT;
+		// Memory ran out, or there was nothing to show (every part hidden or empty): a format error.
+		const int result = out_of_memory || json.failed ? XSDK_AVATAR_ERROR_MEMORY : XSDK_AVATAR_ERROR_FORMAT;
 		free(json.data);
 		free_gltf(&g);
 		return result;
@@ -454,7 +465,7 @@ int avatar_export_outfit(const AvatarOutfit *outfit, void **glb, uint32_t *size_
 	// The container (glTF 2.0, little-endian): a header, the JSON padded with spaces, the binary padded with zeros.
 	const uint32_t json_padded = (uint32_t)(json.length + 3) & ~3u, bin_length = (uint32_t)g.bin.length;
 	const uint32_t total = 12 + 8 + json_padded + 8 + bin_length;
-	uint8_t *out = malloc(total);
+	uint8_t *out = avatar_malloc(total, "an export");
 	if (out) {
 		const uint32_t words[5] = { GLB_MAGIC, 2, total, json_padded, GLB_JSON };
 		for (uint32_t w = 0; w < 5; w++)
@@ -481,7 +492,7 @@ static int export_described(const XsdkAvatarDescription *d, void **glb, uint32_t
 {
 	*glb = NULL;
 	*size_bytes = 0;
-	AvatarOutfit *outfit = malloc(sizeof *outfit);
+	AvatarOutfit *outfit = avatar_malloc(sizeof *outfit, "an export");
 	if (!outfit)
 		return XSDK_AVATAR_ERROR_MEMORY;
 	int result = avatar_outfit_load(outfit, d);

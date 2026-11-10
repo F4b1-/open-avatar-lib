@@ -24,7 +24,10 @@ if [ "${1:-}" = pc ]; then
 	gcc "${flags[@]}" -I"$xsdk/include" "${sources[@]}" "$root/src/avatar_outfit.c" "$root/src/avatar_export.c" \
 		"$root/src/avatar_bake.c" "$root/src/avatar_png.c" "$root/tests/outfit_check.c" -lm \
 		-o "$root/build/pc/outfit_check"
-	echo "Built $root/build/pc/avatar_dump, player_check, walk_check, anim_check and outfit_check"
+	# The out-of-memory tests, with AddressSanitizer: a leak or a double free in an error path ends them.
+	gcc "${flags[@]}" -g -fsanitize=address "${sources[@]}" "$root/tests/alloc_check.c" -lm 		-o "$root/build/pc/alloc_check"
+	gcc "${flags[@]}" -g -fsanitize=address -I"$xsdk/include" "${sources[@]}" "$root/src/avatar_outfit.c" 		"$root/src/avatar_export.c" "$root/src/avatar_bake.c" "$root/src/avatar_png.c" "$root/tests/outfit_check.c" 		-lm -o "$root/build/pc/outfit_alloc_check"
+	echo "Built $root/build/pc/avatar_dump, player_check, walk_check, anim_check, outfit_check, alloc_check and outfit_alloc_check"
 	exit 0
 fi
 

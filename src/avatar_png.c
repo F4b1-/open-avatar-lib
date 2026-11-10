@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "avatar_internal.h"
 #include "avatar_runtime.h"
 
 enum {
@@ -30,7 +31,7 @@ static void put_byte(Out *o, uint8_t b)
 		return;
 	if (o->size == o->capacity) {
 		const size_t capacity = o->capacity ? o->capacity * 2 : 65536;
-		uint8_t *data = realloc(o->data, capacity);
+		uint8_t *data = avatar_realloc(o->data, capacity, "a PNG");
 		if (!data) {
 			o->failed = true;
 			return;
@@ -112,7 +113,7 @@ static uint32_t hash3(const uint8_t *p)
 // The raw bytes as one fixed-code deflate block.
 static bool deflate_fixed(Out *o, const uint8_t *in, size_t n)
 {
-	int32_t *head = malloc(sizeof(int32_t) << HASH_BITS), *prev = malloc(sizeof(int32_t) * WINDOW);
+	int32_t *head = avatar_malloc(sizeof(int32_t) << HASH_BITS, "a PNG"), *prev = avatar_malloc(sizeof(int32_t) * WINDOW, "a PNG");
 	if (!head || !prev) {
 		free(head);
 		free(prev);
@@ -202,7 +203,7 @@ int avatar_png_encode(const uint8_t *rgba, uint32_t width, uint32_t height, uint
 	*size_bytes = 0;
 	// Rows with their filter byte: 1, each byte less the one a texel before.
 	const size_t row = (size_t)width * 4, raw_size = (row + 1) * height;
-	uint8_t *raw = malloc(raw_size);
+	uint8_t *raw = avatar_malloc(raw_size, "a PNG");
 	if (!raw)
 		return XSDK_AVATAR_ERROR_MEMORY;
 	for (uint32_t y = 0; y < height; y++) {

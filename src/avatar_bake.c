@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "avatar_internal.h"
 #include "avatar_runtime.h"
 
 enum {
@@ -102,19 +103,20 @@ static void decode_block(const uint8_t *block, bool dxt5, uint8_t *out, uint32_t
 	}
 }
 
-// A texture's frame as RGBA bytes, rows from the top; false if it has no pixels or a format we don't know.
-static bool decode(const XsdkAvatarTexture *t, uint32_t frame, Layer *out)
+// A texture's frame as RGBA bytes, rows from the top. XSDK_AVATAR_ERROR_NOT_FOUND if it has no pixels or a format
+// we don't know (the layer is then left out), _MEMORY.
+static int decode(const XsdkAvatarTexture *t, uint32_t frame, Layer *out)
 {
 	const bool dxt5 = t->format == XSDK_AVATAR_TEXTURE_DXT5;
 	if (!t->data || (!dxt5 && t->format != XSDK_AVATAR_TEXTURE_DXT1) || t->width < 4 || t->height < 4 ||
 		frame >= t->frame_count)
-		return false;
+		return XSDK_AVATAR_ERROR_NOT_FOUND;
 	const uint32_t block_bytes = dxt5 ? 16 : 8, across = t->width / 4, down = t->height / 4;
 	if ((size_t)across * down * block_bytes > t->frame_bytes)
-		return false;
-	out->rgba = malloc((size_t)t->width * t->height * 4);
+		return XSDK_AVATAR_ERROR_NOT_FOUND;
+	out->rgba = avatar_malloc((size_t)t->width * t->height * 4, "a baked texture");
 	if (!out->rgba)
-		return false;
+		return XSDK_AVATAR_ERROR_MEMORY;
 	out->width = t->width;
 	out->height = t->height;
 	const uint8_t *blocks = t->data + (size_t)frame * t->frame_bytes;
@@ -122,7 +124,7 @@ static bool decode(const XsdkAvatarTexture *t, uint32_t frame, Layer *out)
 		for (uint32_t bx = 0; bx < across; bx++)
 			decode_block(blocks + ((size_t)by * across + bx) * block_bytes, dxt5,
 				out->rgba + ((size_t)by * 4 * t->width + bx * 4) * 4, t->width);
-	return true;
+	return XSDK_AVATAR_OK;
 }
 
 static int wrap_or_clamp(int i, int n, bool clamp)
@@ -243,12 +245,12 @@ static void draw_triangle(Canvas *canvas, const Layer *out_layer, const AvatarPa
 
 // Texels no triangle covered take their covered neighbours' average, a ring at a time, so that filtering across a
 // seam doesn't pull in black; what is still empty after that takes the average of everything covered.
-static void dilate(Canvas *c)
+static int dilate(Canvas *c)
 {
 	const uint32_t w = c->width, h = c->height;
-	uint8_t *next = malloc((size_t)w * h);
+	uint8_t *next = avatar_malloc((size_t)w * h, "a baked texture");
 	if (!next)
-		return;
+		return XSDK_AVATAR_ERROR_MEMORY;
 	for (uint32_t pass = 0; pass < DILATE_PASSES; pass++) {
 		memcpy(next, c->covered, (size_t)w * h);
 		for (uint32_t y = 0; y < h; y++)
@@ -288,6 +290,7 @@ static void dilate(Canvas *c)
 		if (!c->covered[i])
 			for (uint32_t k = 0; k < 4; k++)
 				c->color[4 * i + k] = n ? sum[k] / (float)n : 1.0f;
+	return XSDK_AVATAR_OK;
 }
 
 static const XsdkAvatarParameter *texture_parameter(const XsdkAvatarMaterial *material, uint32_t id)
@@ -296,12 +299,21 @@ static const XsdkAvatarParameter *texture_parameter(const XsdkAvatarMaterial *ma
 	return p && p->is_texture ? p : NULL;
 }
 
-static void set_layer(Layer *l, const XsdkAvatarTexture *texture, const XsdkAvatarParameter *p)
+// A layer from a texture binding: its pixels decoded (none if the texture has none). XSDK_AVATAR_ERROR_MEMORY only.
+static int set_layer(Layer *l, const XsdkAvatarTexture *texture, const XsdkAvatarParameter *p)
 {
 	l->uv_set = p->uv_set != XSDK_AVATAR_NO_UV_SET ? p->uv_set : 0;
 	l->clamp = p->address == XSDK_AVATAR_ADDRESS_CLAMP;
-	if (texture && !decode(texture, 0, l))
+	const int result = texture ? decode(texture, 0, l) : XSDK_AVATAR_ERROR_NOT_FOUND;
+	if (result != XSDK_AVATAR_OK)
 		l->rgba = NULL;
+	return result == XSDK_AVATAR_ERROR_MEMORY ? result : XSDK_AVATAR_OK;
+}
+
+static void free_layers(Layer *layers, uint32_t count)
+{
+	for (uint32_t k = 0; k < count; k++)
+		free(layers[k].rgba);
 }
 
 static uint32_t side_size(uint32_t n)
@@ -321,13 +333,15 @@ int avatar_bake_material(const AvatarPart *part, uint32_t material, const uint8_
 	uint32_t count = 0, width = 0, height = 0;
 	const Layer *out_layer = NULL;
 	bool any = false;
+	int layer_result = XSDK_AVATAR_OK; // running out of memory decoding a layer fails the bake
 	if (part->is_head) {
 		// Slot k: the face layer k (frame 0, the neutral face), sampled with the set its binding names.
 		count = AVATAR_HEAD_LAYERS;
 		for (uint32_t k = 0; k < AVATAR_HEAD_LAYERS; k++) {
 			for (uint32_t i = 0; i < m->parameter_count; i++)
-				if (m->parameters[i].is_texture && m->parameters[i].texture == k)
-					set_layer(&layers[k], part->layers[k].data ? &part->layers[k] : NULL, &m->parameters[i]);
+				if (m->parameters[i].is_texture && m->parameters[i].texture == k && layer_result == XSDK_AVATAR_OK)
+					layer_result =
+						set_layer(&layers[k], part->layers[k].data ? &part->layers[k] : NULL, &m->parameters[i]);
 			any |= layers[k].rgba != NULL;
 		}
 		out_layer = &layers[0];
@@ -344,7 +358,8 @@ int avatar_bake_material(const AvatarPart *part, uint32_t material, const uint8_
 				continue;
 			const XsdkAvatarTexture *t = ids[k]->texture < model->texture_count ? &model->textures[ids[k]->texture]
 																				 : NULL;
-			set_layer(&layers[k], t, ids[k]);
+			if (layer_result == XSDK_AVATAR_OK)
+				layer_result = set_layer(&layers[k], t, ids[k]);
 			if (layers[k].rgba) {
 				width = layers[k].width > width ? layers[k].width : width;
 				height = layers[k].height > height ? layers[k].height : height;
@@ -355,13 +370,12 @@ int avatar_bake_material(const AvatarPart *part, uint32_t material, const uint8_
 		width = side_size(width);
 		height = side_size(height);
 	}
-	if (!any) {
-		for (uint32_t k = 0; k < count; k++)
-			free(layers[k].rgba);
-		return XSDK_AVATAR_ERROR_NOT_FOUND;
+	if (layer_result != XSDK_AVATAR_OK || !any) {
+		free_layers(layers, count);
+		return layer_result != XSDK_AVATAR_OK ? layer_result : XSDK_AVATAR_ERROR_NOT_FOUND;
 	}
-	Canvas canvas = { width, height, calloc((size_t)width * height * 4, sizeof(float)),
-		calloc((size_t)width * height, 1) };
+	Canvas canvas = { width, height, avatar_calloc((size_t)width * height * 4, sizeof(float), "a baked texture"),
+		avatar_calloc((size_t)width * height, 1, "a baked texture") };
 	const bool see_through = m->technique == XSDK_AVATAR_TECHNIQUE_SEE_THROUGH;
 	int result = XSDK_AVATAR_ERROR_MEMORY;
 	if (canvas.color && canvas.covered) {
@@ -377,8 +391,8 @@ int avatar_bake_material(const AvatarPart *part, uint32_t material, const uint8_
 					}
 			triangle += triangles;
 		}
-		dilate(&canvas);
-		out->rgba = malloc((size_t)width * height * 4);
+		out->rgba = dilate(&canvas) == XSDK_AVATAR_OK ? avatar_malloc((size_t)width * height * 4, "a baked texture")
+													   : NULL;
 		if (out->rgba) {
 			for (size_t i = 0; i < (size_t)width * height * 4; i++) {
 				const float c = canvas.color[i];
@@ -394,7 +408,6 @@ int avatar_bake_material(const AvatarPart *part, uint32_t material, const uint8_
 	}
 	free(canvas.color);
 	free(canvas.covered);
-	for (uint32_t k = 0; k < count; k++)
-		free(layers[k].rgba);
+	free_layers(layers, count);
 	return result;
 }

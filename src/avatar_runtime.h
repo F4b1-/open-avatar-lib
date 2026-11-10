@@ -14,11 +14,13 @@
 
 // The stock pack, opened on first use and kept until avatar_content_close.
 int avatar_content_pack(const XsdkAvatarPack **pack);
-// A stock record's STRB file, malloc'd; NULL (logged) if it can't be read.
-void *avatar_content_read_stock(uint32_t record, uint32_t *size_bytes);
-// An item package's asset_v2.bin, found by the item's id in the shared content folders, malloc'd; NULL if the
-// console doesn't have it.
-void *avatar_content_read_item(const uint8_t *id, uint32_t *size_bytes);
+// A stock record's STRB file, malloc'd into *strb for the caller to free. XSDK_AVATAR_ERROR_NOT_FOUND for an empty
+// record, _READ if the pack can't be read (both logged), _MEMORY.
+int avatar_content_read_stock(uint32_t record, void **strb, uint32_t *size_bytes);
+// An item package's asset_v2.bin, found by the item's id in the shared content folders, malloc'd into *strb.
+// XSDK_AVATAR_ERROR_NOT_FOUND if the console doesn't have the item, the package's read error if it can't be read
+// (both logged), _MEMORY.
+int avatar_content_read_item(const uint8_t *id, void **strb, uint32_t *size_bytes);
 // The description of the profile signed in at user_index.
 int avatar_content_read_profile(uint32_t user_index, uint8_t bytes[XSDK_AVATAR_DESCRIPTION_BYTES]);
 // Frees the stock animations and closes the pack.

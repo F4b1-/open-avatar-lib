@@ -4,12 +4,17 @@
 // Prints each part (its stock record or "package", meshes, what its shape hides and moves) and what the body's draw
 // keeps, then the stand-ins and items left out. Exits 1 if an item package the description names and a folder holds
 // didn't load as a package, or if a package's shape block went unread: the bug of test run 5 (2026-11-06).
+//   outfit_check <FFFE07DF00000002> alloc <description> [<package folder> ...]
+// The outfit load and the rig export with their 1st, 2nd, ... allocation failing, as tests/alloc_check does for the
+// asset layer: each must return XSDK_AVATAR_ERROR_MEMORY with nothing left over (build/pc/outfit_alloc_check, the
+// same test built with AddressSanitizer, runs it).
 
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "avatar_internal.h"
 #include "avatar_runtime.h"
 
 static FILE *pack_file;
@@ -17,8 +22,12 @@ static XsdkAvatarPack *pack;
 static const char *const *folders;
 static int folder_count;
 
+static bool quiet; // the alloc mode's hundreds of runs: no log
+
 void xsdk_log_write(const char *format, ...)
 {
+	if (quiet)
+		return;
 	va_list args;
 	va_start(args, format);
 	printf("  log: ");
@@ -41,18 +50,27 @@ int avatar_content_pack(const XsdkAvatarPack **out)
 	return pack ? XSDK_AVATAR_OK : XSDK_AVATAR_ERROR_READ;
 }
 
-void *avatar_content_read_stock(uint32_t record, uint32_t *size_bytes)
+int avatar_content_read_stock(uint32_t record, void **strb, uint32_t *size_bytes)
 {
+	*strb = NULL;
 	*size_bytes = xsdk_avatar_pack_asset_size(pack, record);
-	void *strb = *size_bytes ? malloc(*size_bytes) : NULL;
-	if (strb && xsdk_avatar_pack_read_asset(pack, record, strb) == XSDK_AVATAR_OK)
-		return strb;
-	free(strb);
-	return NULL;
+	if (!*size_bytes)
+		return XSDK_AVATAR_ERROR_NOT_FOUND;
+	void *data = avatar_malloc(*size_bytes, "a stock asset"); // through the hook, as the console's
+	if (!data)
+		return XSDK_AVATAR_ERROR_MEMORY;
+	const int result = xsdk_avatar_pack_read_asset(pack, record, data);
+	if (result != XSDK_AVATAR_OK) {
+		free(data);
+		return result;
+	}
+	*strb = data;
+	return XSDK_AVATAR_OK;
 }
 
-void *avatar_content_read_item(const uint8_t *id, uint32_t *size_bytes)
+int avatar_content_read_item(const uint8_t *id, void **strb, uint32_t *size_bytes)
 {
+	*strb = NULL;
 	char name[33];
 	uint32_t title;
 	xsdk_avatar_id_package_name(id, name, &title);
@@ -62,12 +80,11 @@ void *avatar_content_read_item(const uint8_t *id, uint32_t *size_bytes)
 		FILE *file = fopen(path, "rb");
 		if (!file)
 			continue;
-		void *strb = NULL;
-		const int result = xsdk_avatar_package_read_file(read_file, file, "asset_v2.bin", &strb, size_bytes);
+		const int result = xsdk_avatar_package_read_file(read_file, file, "asset_v2.bin", strb, size_bytes);
 		fclose(file);
-		return result == XSDK_AVATAR_OK ? strb : NULL;
+		return result;
 	}
-	return NULL;
+	return XSDK_AVATAR_ERROR_NOT_FOUND;
 }
 
 int avatar_content_read_profile(uint32_t user_index, uint8_t bytes[XSDK_AVATAR_DESCRIPTION_BYTES])
@@ -108,9 +125,10 @@ static uint32_t hidden_triangles(const AvatarOutfit *outfit, const AvatarPart *p
 static bool in_a_folder(const uint8_t *id)
 {
 	uint32_t size;
-	void *strb = avatar_content_read_item(id, &size);
+	void *strb;
+	const int result = avatar_content_read_item(id, &strb, &size);
 	free(strb);
-	return strb != NULL;
+	return result == XSDK_AVATAR_OK;
 }
 
 // An avatar of stock parts with face features (xsdk_avatar_load_stock, as samples/store's NPCs): the features become
@@ -178,13 +196,67 @@ static int export_rig(const char *out, const char *what)
 	return written ? 0 : 1;
 }
 
+// One load, or one export, of the description; frees what it made.
+static int load_once(const XsdkAvatarDescription *d, const uint8_t *bytes, bool export)
+{
+	if (export) {
+		void *glb = NULL;
+		uint32_t size = 0;
+		const int result = xsdk_avatar_export_description(bytes, XSDK_AVATAR_DESCRIPTION_BYTES, &glb, &size);
+		if (result != XSDK_AVATAR_OK && glb) {
+			printf("alloc: a failed export left its file: FAIL\n");
+			free(glb);
+			return 1;
+		}
+		free(glb);
+		return result;
+	}
+	static AvatarOutfit outfit;
+	const int result = avatar_outfit_load(&outfit, d);
+	if (result != XSDK_AVATAR_OK && outfit.part_count) {
+		printf("alloc: a failed load left parts: FAIL\n");
+		return 1;
+	}
+	avatar_outfit_free(&outfit);
+	return result;
+}
+
+// The outfit load and the export with allocation 1, 2, 3, ... failing until a run makes none fail.
+static int check_alloc(const XsdkAvatarDescription *d, const uint8_t *bytes)
+{
+	int failures = 0;
+	quiet = true;
+	for (int export = 0; export < 2; export++)
+		for (uint32_t n = 1;; n++) {
+			avatar_alloc_fail_at = n;
+			const int result = load_once(d, bytes, export);
+			const bool failed = avatar_alloc_fail_at == 0;
+			avatar_alloc_fail_at = 0;
+			if (!failed) {
+				printf("alloc: %s: %u allocations, each failure %s\n", export ? "the export" : "the outfit load",
+					n - 1, result == XSDK_AVATAR_OK ? "handled" : "handled, but the last run failed: FAIL");
+				failures += result != XSDK_AVATAR_OK;
+				break;
+			}
+			if (result != XSDK_AVATAR_ERROR_MEMORY) {
+				printf("alloc: %s: allocation %u failed but it returned %d: FAIL\n",
+					export ? "the export" : "the outfit load", n, result);
+				failures++;
+			}
+		}
+	quiet = false;
+	printf(failures ? "alloc: FAIL\n" : "alloc: all passed\n");
+	return failures ? 1 : 0;
+}
+
 int main(int argc, char **argv)
 {
-	if (argc < 3 || (strcmp(argv[2], "export") == 0 && argc < 5)) {
+	if (argc < 3 || (strcmp(argv[2], "export") == 0 && argc < 5) || (strcmp(argv[2], "alloc") == 0 && argc < 4)) {
 		fprintf(stderr, "usage: outfit_check <FFFE07DF00000002> <description> [<package folder> ...]\n"
 						"       outfit_check <FFFE07DF00000002> stock\n"
 						"       outfit_check <FFFE07DF00000002> export <out.glb> male|female|stock|<description> "
-						"[<package folder> ...]\n");
+						"[<package folder> ...]\n"
+						"       outfit_check <FFFE07DF00000002> alloc <description> [<package folder> ...]\n");
 		return 2;
 	}
 	pack_file = fopen(argv[1], "rb");
@@ -195,19 +267,23 @@ int main(int argc, char **argv)
 		folder_count = argc - 5;
 		return export_rig(argv[3], argv[4]);
 	}
-	folders = (const char *const *)argv + 3;
-	folder_count = argc - 3;
+	const bool alloc = strcmp(argv[2], "alloc") == 0;
+	const char *description = alloc ? argv[3] : argv[2];
+	folders = (const char *const *)argv + (alloc ? 4 : 3);
+	folder_count = argc - (alloc ? 4 : 3);
 	XsdkAvatarDescription d;
 	static AvatarOutfit outfit;
 	if (strcmp(argv[2], "stock") == 0)
 		return check_stock(&d, &outfit);
 	static uint8_t bytes[XSDK_AVATAR_DESCRIPTION_BYTES];
-	FILE *file = fopen(argv[2], "rb");
+	FILE *file = fopen(description, "rb");
 	if (!file || fread(bytes, 1, sizeof bytes, file) != sizeof bytes)
 		return 2;
 	fclose(file);
 	if (xsdk_avatar_description_parse(&d, bytes, sizeof bytes) != XSDK_AVATAR_OK)
 		return 2;
+	if (alloc)
+		return check_alloc(&d, bytes);
 	const int result = avatar_outfit_load(&outfit, &d);
 	printf("outfit: %d, %u parts, gender %u, %u replaced, %u left out, skeleton %u bones\n", result,
 		(unsigned)outfit.part_count, (unsigned)outfit.gender, (unsigned)outfit.replaced_count,
@@ -234,7 +310,8 @@ int main(int argc, char **argv)
 		uint32_t title;
 		xsdk_avatar_id_package_name(d.items[i].id, name, &title);
 		uint32_t size;
-		void *strb = avatar_content_read_item(d.items[i].id, &size);
+		void *strb;
+		(void)avatar_content_read_item(d.items[i].id, &strb, &size);
 		XsdkAvatarShape shape;
 		const bool has_shape = strb && xsdk_avatar_shape_decode(&shape, strb, size) == XSDK_AVATAR_OK;
 		free(strb);

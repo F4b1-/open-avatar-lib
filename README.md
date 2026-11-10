@@ -93,6 +93,9 @@ Without an argument it uses Avatar Thrift Store's xsdk submodule (`../avatar_thr
 ## Tests
 
 - `build/pc/player_check`: the player's cross-fades, queueing and timing, on made-up animations.
+- `build/pc/alloc_check <FFFE07DF00000002> [<item package> ...]` and `build/pc/outfit_alloc_check <FFFE07DF00000002>
+  alloc <description> [<package folder> ...]`: every load, decode, outfit and export run with its 1st, 2nd, 3rd, ...
+  allocation failing; each must return `XSDK_AVATAR_ERROR_MEMORY` and, built with AddressSanitizer, leak nothing.
 - `build/pc/walk_check <FFFE07DF00000002> [walk | run | jump]`: the library's walk, run and jump (all three without
   a mode) on both bodies, by the skinned feet: no foot slides or sinks while down, the walk and the run loop at the
   speed the library measures, the jump leaves the floor and lands, and the knees and ankles don't twist.
