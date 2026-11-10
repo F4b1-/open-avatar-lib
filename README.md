@@ -2,7 +2,8 @@
 
 Xbox 360 avatars for homebrew built on [xsdk](../avatar_thrift_store/third_party/xsdk): the player's own avatar, or
 NPCs shipped as descriptions, dressed, textured and animated with the console's stock animations, drawn in your
-title's own pass. Every asset is read at run time from the console the title runs on; the library ships code only.
+title's own pass. Every avatar asset is read at run time from the console the title runs on; the library ships code
+and a few animations of its own (a walk, a run and a jump, keyed in Blender, MIT), as the stock set has no locomotion.
 
 GOALS.md says what it is for, SPECS.md holds the format facts and the milestones. Work in progress: the avatar layer
 is new (milestone 8) and the interface may still change.
@@ -36,9 +37,9 @@ xsdk_avatar_close(avatar);
 xsdk_avatar_shutdown();
 ```
 
-`samples/hello` is this as a whole title, in C++ (`xsdk/avatar.hpp`). `samples/viewer` puts several avatars in one
+`samples/hello` is this as a whole title, written in C++ on the same C API (the avatar held in a `std::unique_ptr`). `samples/viewer` puts several avatars in one
 scene: the player's, NPCs from description files, and stock ones. `samples/store` is a small game: walk your
-avatar round the Avatar Thrift Store among NPCs, with a walk the library makes in code and an emote wheel.
+avatar round the Avatar Thrift Store among NPCs, with the library's walk, run and jump and an emote wheel.
 
 The avatar's space is metres, y up, facing +z, feet at y 0; place it with `xsdk_avatar_set_transform`. A draw
 changes only the shaders, vertex constants 0-222, pixel constants 0-29, vertex stream 0, texture fetch slots 0-5 and
@@ -49,7 +50,8 @@ set (`xsdk_avatar_set_light`: direction, colour, sky and ground ambient, highlig
 
 - **The avatar layer** (`XsdkAvatar`): load, play, update, draw, close. What most titles need.
 - **The animation layer**: stock animations (`xsdk_avatar_stock_animation`), a player of your own
-  (`XsdkAvatarPlayer`), a walk made in code (`xsdk_avatar_animation_walk`: the stock animations have none), poses you
+  (`XsdkAvatarPlayer`), the library's own walk, run and jump (`xsdk_avatar_animation_load_walk`, `_load_run`, `_load_jump`:
+  the stock animations have none; a clip per body) and the speed of any walk (`xsdk_avatar_animation_ground_speed`), poses you
   sample, blend or set bone by bone, drawn with `xsdk_avatar_draw_pose`; the skeleton and skin matrices.
 - **The asset layer**: the stock pack, item packages, descriptions, models, textures, skeletons and animations as
   plain structs. No GPU; it builds for the PC too.
@@ -91,8 +93,10 @@ Without an argument it uses Avatar Thrift Store's xsdk submodule (`../avatar_thr
 ## Tests
 
 - `build/pc/player_check`: the player's cross-fades, queueing and timing, on made-up animations.
-- `build/pc/walk_check <FFFE07DF00000002>`: the walk made in code on both bodies: it loops, the standing foot stays
-  on the floor without sliding, and the legs are symmetric.
+- `build/pc/walk_check <FFFE07DF00000002> [walk | run | jump]`: the library's walk, run and jump (all three without
+  a mode) on both bodies, by the skinned feet: no foot slides or sinks while down, the walk and the run loop at the
+  speed the library measures, the jump leaves the floor and lands, and the knees and ankles don't twist.
+  `... clip <walk.xaan> [<female walk.xaan>]` checks a walk of your own the same way.
 - `tools/anim_convert.py <in.glb> <out.xaan>` and `build/pc/anim_check <FFFE07DF00000002> <out.xaan> "<stock name>"`: an
   animation from a glTF export (360sona's, say) converted into the library's own file and checked against the stock
   animation it holds.

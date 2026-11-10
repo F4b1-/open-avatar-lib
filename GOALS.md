@@ -14,7 +14,7 @@ A developer should be able to:
 
 - show the signed-in player's avatar in a menu, a lobby or a game scene in an afternoon;
 - make it move: idle, wave, celebrate and the other gestures with the stock animations every console already has,
-  and walk, run, jump and sit with the library's own (the stock set has no locomotion);
+  and walk, run and jump with the library's own (the stock set has no locomotion);
 - put several avatars in one scene: the local players, and NPCs the game ships as descriptions;
 - fit it into their own renderer, camera, lighting and frame loop, rather than the other way round;
 - give it motion of their own: animations made in a 3D program, or bones posed from the game's code.
@@ -75,7 +75,7 @@ better documented than most homebrew, and it doesn't go as far as an engine's ma
 | Feature | What the developer gets |
 |---|---|
 | Custom animations | animations made in a 3D program, played like stock ones (section 4.5) |
-| The library's own animations | walk, run, jump and sit, which the stock set lacks: made through section 4.5, shipped with the library under MIT, free for games to ship and edit |
+| The library's own animations | walk, run and jump, which the stock set lacks: made through section 4.5, shipped with the library under MIT, free for games to ship and edit |
 | Layering | one animation over part of the body (wave while walking), with upper- and lower-body bone masks ready-made; and additive layers, a game's own adjustment on top of another animation (a stock one, say) |
 | Look-at | the head and neck turned towards a point, on top of whatever animation plays |
 | Attachments | a bone's transform (hands, head), so the game can put a prop in a hand or a hat on a head |
@@ -94,6 +94,11 @@ better documented than most homebrew, and it doesn't go as far as an engine's ma
 - Rendering to a texture for menus and thumbnails (a helper over xsdk's render targets).
 - Level of detail for crowds.
 - A small posing sample on the console (bones set with the gamepad), as a demonstration rather than a tool.
+- Sitting (dropped from the library's own animations 2026-11-10, the user's decision): a sit fits only one seat's
+  height and depth, needs sitting down, a sitting idle and standing up, and the avatar lined up with the seat first;
+  one shipped clip would float or sink on most games' furniture. A game makes its own for its own seats through 4.5
+  (rig export, Blender, converter), or holds a still pose (4.2). Worth it in the library only with seat fitting at
+  run time (leg IK against the title's seat).
 
 ### 4.4 Out of scope
 
@@ -142,8 +147,8 @@ layers it over the stock one at run time (4.2, additive layers).
 Three layers, all public:
 
 - **The avatar layer** (`xsdk_avatar_*` on an `XsdkAvatar`): what nearly every game uses. Load, play, update,
-  draw, close; light, face and look-at helpers. A C++ wrapper (`xsdk::Avatar`) on top, header-only and with no
-  behaviour of its own.
+  draw, close; light, face and look-at helpers. C, called from C and C++ titles alike (`samples/hello` is C++); the
+  C++ wrapper of the first plan was removed on 2026-11-10 (SPECS.md, section 1.3).
 - **The animation layer**: what ambitious games and tools use. The skeleton; animations, stock or custom, and the
   list of stock ones; sampling an animation at a time into a pose; blending two poses with a weight and a bone mask;
   a pose's skin matrices and bone transforms; drawing an avatar with any pose. Its first parts exist since milestone
@@ -186,7 +191,6 @@ Laid out as xsdk is, so the library could move into xsdk as a copy (SPECS.md, se
 
 ```
 include/xsdk/avatar.h      the C interface: the avatar layer, the animation layer, the asset layer
-include/xsdk/avatar.hpp    the C++ wrapper
 src/avatar_*.c             one file per concern: pack, STFS, LZX, model, texture, skeleton, animation, draw
 tests/                     PC tests and tools, run against the developer's own console files
 tools/                     console probes, the shader generator, and the PC animation tools (glTF converter, rig
@@ -216,13 +220,13 @@ The first release is done when:
 - Done: reading the stock pack, item packages and the description; decoding meshes, textures and materials (C, tested
   against the prototypes on the whole pack); the textured, coloured avatar (milestone 5); the skeleton and skinning
   on the GPU (6); stock animations played, looped and cross-faded (7); the avatar layer of section 5 with several
-  avatars and NPCs, the C++ wrapper, the README and samples (8); the face: expressions, blinking, talking (9). All
+  avatars and NPCs, the C++ wrapper (removed 2026-11-10), the README and samples (8); the face: expressions, blinking, talking (9). All
   confirmed on the console, the last with `samples/store`.
 - Built along the way, confirmed with the store: per-pixel lighting with a light the title sets, anti-aliasing in
-  bands, a walk made in code (`xsdk_avatar_animation_walk`, standing in for the library's own until milestone 11),
+  bands, a walk made in code (`xsdk_avatar_animation_walk`, standing in until milestone 11, removed 2026-11-10),
   stock avatars with faces, and `samples/store`: walk round the Avatar Thrift Store among NPCs, emote from a wheel,
   snow falling outside the window.
-- Next: custom animations (milestone 10, section 4.5), then the library's own walk, run, jump and sit (11). A first
+- Next: custom animations (milestone 10, section 4.5), then the library's own walk, run and jump (11). A first
   check for 4.5: compare a 360sona export's rig with the library's skeleton. Left open from milestone 9: whether the
   stock animations carry face keys (SPECS.md, section 5.5).
 - Not yet in the avatar layer, from 4.1: the loading state (loads are synchronous), and the stock animations'
