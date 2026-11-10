@@ -1,19 +1,23 @@
 // Skeletons and poses (SPECS.md, sections 4.4 and 4.5): the avatar's derived skeleton, props' skeleton blocks, and
-// the skin matrices of a pose.
+// the skin matrices of a pose. Builds for the PC.
 
 #include <math.h>
 #include <string.h>
 
 #include "avatar_internal.h"
+#include "avatar_math.h"
 #include "xsdk/avatar.h"
 
+// A prop's skeleton block (STRB block 5), little-endian: a header, two quantised groups (positions, then
+// rotations), then per bone a u8 parent and a value of each group, all one bit stream.
 enum {
 	BLOCK_SKELETON = 5,
 	SKELETON_HEADER_BYTES = 0x20,
+	SKELETON_BONE_COUNT_AT = 0x1C,
+	PARENT_BITS = 8,
+	GROUPS = 2,
+	QUANTISED_BYTES = (AVATAR_QUANTISED_BITS + 7) / 8,
 };
-
-// Per-axis scale of quantised values, as for mesh positions (SPECS.md, section 3.3).
-static const float axis_scale[3] = { 2.0f, 1.6329932f, 1.7320508f };
 
 // The avatar's parents (SPECS.md, section 4.4): the named bones by anatomy, the unnamed ones by where their skin sits;
 // the table keeps the XNA reference's rule that bones are sorted by depth.
@@ -33,16 +37,10 @@ static const uint8_t avatar_parents[XSDK_AVATAR_BONES] = {
 	56, 57, 58, 59, 60,     // 66-70: third joints, right
 };
 
-static void quaternion_identity(float q[4])
-{
-	q[0] = q[1] = q[2] = 0.0f;
-	q[3] = 1.0f;
-}
-
 void xsdk_avatar_quaternion_from_log(float quaternion[4], const float log[3])
 {
 	const float half = sqrtf(log[0] * log[0] + log[1] * log[1] + log[2] * log[2]);
-	const float k = half > 1e-8f ? sinf(half) / half : 1.0f;
+	const float k = half > 1e-8f ? sinf(half) / half : 1.0f; // sin(x) / x tends to 1
 	for (uint32_t a = 0; a < 3; a++)
 		quaternion[a] = log[a] * k;
 	quaternion[3] = cosf(half);
@@ -52,7 +50,7 @@ void xsdk_avatar_quaternion_from_axis(float quaternion[4], float x, float y, flo
 {
 	const float length = sqrtf(x * x + y * y + z * z);
 	if (length < 1e-8f) {
-		quaternion_identity(quaternion);
+		avatar_quaternion_identity(quaternion);
 		return;
 	}
 	const float log[3] = { x / length * 0.5f * angle, y / length * 0.5f * angle, z / length * 0.5f * angle };
@@ -64,20 +62,6 @@ typedef struct {
 	float r[3][3];
 	float t[3];
 } Transform;
-
-static void rotation_of(float r[3][3], const float q[4])
-{
-	const float x = q[0], y = q[1], z = q[2], w = q[3];
-	r[0][0] = 1 - 2 * (y * y + z * z);
-	r[0][1] = 2 * (x * y - z * w);
-	r[0][2] = 2 * (x * z + y * w);
-	r[1][0] = 2 * (x * y + z * w);
-	r[1][1] = 1 - 2 * (x * x + z * z);
-	r[1][2] = 2 * (y * z - x * w);
-	r[2][0] = 2 * (x * z - y * w);
-	r[2][1] = 2 * (y * z + x * w);
-	r[2][2] = 1 - 2 * (x * x + y * y);
-}
 
 static Transform compose(const Transform *a, const Transform *b)
 {
@@ -105,17 +89,39 @@ static Transform inverse_rigid(const Transform *a)
 static Transform rest_of(const XsdkAvatarSkeleton *skeleton, uint32_t bone)
 {
 	Transform out;
-	rotation_of(out.r, skeleton->rotations[bone]);
+	avatar_quaternion_matrix(skeleton->rotations[bone], out.r);
 	memcpy(out.t, skeleton->positions[bone], sizeof out.t);
 	return out;
+}
+
+// Adds one vertex's evidence of where joints are: per bone, the weighted sum of the positions where its subtree's
+// skin meets the rest of the body ([0-2]) and the weights' sum ([3]). Each pair of bones the vertex weights (by the
+// smaller of the two weights) counts for every bone on the path between them, below their common ancestor; parents
+// being numbered below their children, that path is found by stepping up from the larger index.
+static void add_joint_evidence(double sums[XSDK_AVATAR_BONES][4], const uint8_t *bones, const uint8_t *weights,
+	const float *position)
+{
+	for (uint32_t i = 0; i < 4; i++)
+		for (uint32_t j = i + 1; j < 4; j++) {
+			if (!weights[i] || !weights[j] || bones[i] == bones[j] || bones[i] >= XSDK_AVATAR_BONES ||
+				bones[j] >= XSDK_AVATAR_BONES)
+				continue;
+			const double x = weights[i] < weights[j] ? weights[i] : weights[j];
+			uint32_t a = bones[i], b = bones[j];
+			while (a != b) {
+				uint32_t *deeper = a > b ? &a : &b;
+				for (uint32_t c = 0; c < 3; c++)
+					sums[*deeper][c] += x * position[c];
+				sums[*deeper][3] += x;
+				*deeper = avatar_parents[*deeper];
+			}
+		}
 }
 
 int xsdk_avatar_skeleton_build(XsdkAvatarSkeleton *skeleton, const XsdkAvatarModel *body)
 {
 	memset(skeleton, 0, sizeof *skeleton);
-	// Each bone's pivot: the weighted centre of the vertices its subtree shares with the rest of the body. A vertex
-	// pair of bones u, v counts for every bone on the path between them below their common ancestor; parents being
-	// numbered below their children, that path is found by stepping up from the larger index.
+	// Each bone's pivot: the weighted centre of the vertices its subtree shares with the rest of the body.
 	double sums[XSDK_AVATAR_BONES][4] = { { 0 } };
 	uint32_t skinned = 0;
 	for (uint32_t m = 0; m < body->mesh_count; m++) {
@@ -123,53 +129,27 @@ int xsdk_avatar_skeleton_build(XsdkAvatarSkeleton *skeleton, const XsdkAvatarMod
 		if (!mesh->bones)
 			continue;
 		skinned++;
-		for (uint32_t v = 0; v < mesh->vertex_count; v++) {
-			const uint8_t *bones = mesh->bones + 4 * v, *weights = mesh->weights + 4 * v;
-			const float *p = mesh->positions + 3 * v;
-			for (uint32_t i = 0; i < 4; i++)
-				for (uint32_t j = i + 1; j < 4; j++) {
-					if (!weights[i] || !weights[j] || bones[i] == bones[j] || bones[i] >= XSDK_AVATAR_BONES ||
-						bones[j] >= XSDK_AVATAR_BONES)
-						continue;
-					const double x = weights[i] < weights[j] ? weights[i] : weights[j];
-					uint32_t a = bones[i], b = bones[j];
-					while (a != b) {
-						uint32_t *deeper = a > b ? &a : &b;
-						for (uint32_t c = 0; c < 3; c++)
-							sums[*deeper][c] += x * p[c];
-						sums[*deeper][3] += x;
-						*deeper = avatar_parents[*deeper];
-					}
-				}
-		}
+		for (uint32_t v = 0; v < mesh->vertex_count; v++)
+			add_joint_evidence(sums, mesh->bones + 4 * v, mesh->weights + 4 * v, mesh->positions + 3 * v);
 	}
 	if (!skinned || !sums[XSDK_AVATAR_BONE_HIP_LEFT][3] || !sums[XSDK_AVATAR_BONE_HIP_RIGHT][3])
 		return XSDK_AVATAR_ERROR_FORMAT;
 	skeleton->bone_count = XSDK_AVATAR_BONES;
 	for (uint32_t b = 0; b < XSDK_AVATAR_BONES; b++) {
 		skeleton->parents[b] = avatar_parents[b];
-		quaternion_identity(skeleton->rotations[b]);
+		avatar_quaternion_identity(skeleton->rotations[b]);
 		if (sums[b][3] > 0)
 			for (uint32_t c = 0; c < 3; c++)
 				skeleton->positions[b][c] = (float)(sums[b][c] / sums[b][3]);
 	}
 	// The root midway between the hips; bones without skin (props, special) where their parent is.
 	for (uint32_t c = 0; c < 3; c++)
-		skeleton->positions[0][c] = 0.5f * (skeleton->positions[XSDK_AVATAR_BONE_HIP_LEFT][c] +
-											   skeleton->positions[XSDK_AVATAR_BONE_HIP_RIGHT][c]);
+		skeleton->positions[XSDK_AVATAR_BONE_ROOT][c] = 0.5f * (skeleton->positions[XSDK_AVATAR_BONE_HIP_LEFT][c] +
+												   skeleton->positions[XSDK_AVATAR_BONE_HIP_RIGHT][c]);
 	for (uint32_t b = 1; b < XSDK_AVATAR_BONES; b++)
 		if (!(sums[b][3] > 0))
 			memcpy(skeleton->positions[b], skeleton->positions[avatar_parents[b]], sizeof skeleton->positions[b]);
 	return XSDK_AVATAR_OK;
-}
-
-// count bits (up to 32) of a little-endian bit stream from bit at, least significant first.
-static uint32_t stream_bits(const uint8_t *data, uint64_t at, uint32_t count)
-{
-	uint32_t value = 0;
-	for (uint32_t k = 0; k < count; k++, at++)
-		value |= (uint32_t)(data[at >> 3] >> (at & 7) & 1) << k;
-	return value;
 }
 
 int xsdk_avatar_skeleton_decode(XsdkAvatarSkeleton *skeleton, const void *strb, uint32_t size_bytes)
@@ -177,48 +157,38 @@ int xsdk_avatar_skeleton_decode(XsdkAvatarSkeleton *skeleton, const void *strb, 
 	memset(skeleton, 0, sizeof *skeleton);
 	const uint8_t *block;
 	uint32_t bytes;
-	const int result = avatar_find_block(strb, size_bytes, BLOCK_SKELETON, &block, &bytes);
+	int result = avatar_find_block(strb, size_bytes, BLOCK_SKELETON, &block, &bytes);
 	if (result != XSDK_AVATAR_OK)
 		return result;
-	if (bytes < SKELETON_HEADER_BYTES + 2 * 19)
+	if (bytes < SKELETON_HEADER_BYTES + GROUPS * QUANTISED_BYTES)
 		return XSDK_AVATAR_ERROR_FORMAT;
-	const uint32_t count = avatar_le32(block + 28);
+	const uint32_t count = avatar_le32(block + SKELETON_BONE_COUNT_AT);
 	if (!count || count > XSDK_AVATAR_MAX_BONES)
 		return XSDK_AVATAR_ERROR_UNSUPPORTED;
-	// Two groups, positions then rotations: f32 step, f32 minimum per axis, a 6-bit width per axis.
 	uint64_t at = (uint64_t)SKELETON_HEADER_BYTES * 8;
-	float step[2], min[2][3];
-	uint32_t width[2][3], record_bits = 8;
-	for (uint32_t g = 0; g < 2; g++) {
-		step[g] = avatar_float(stream_bits(block, at, 32));
-		for (uint32_t a = 0; a < 3; a++)
-			min[g][a] = avatar_float(stream_bits(block, at + 32 + 32 * a, 32));
-		for (uint32_t a = 0; a < 3; a++) {
-			width[g][a] = stream_bits(block, at + 128 + 6 * a, 6);
-			if (width[g][a] > 32)
-				return XSDK_AVATAR_ERROR_FORMAT;
-			record_bits += width[g][a];
-		}
-		at += 146;
-	}
-	if (at + (uint64_t)record_bits * count > (uint64_t)bytes * 8)
+	AvatarQuantised positions, rotations;
+	result = avatar_read_quantised(block, at, &positions);
+	if (result == XSDK_AVATAR_OK)
+		result = avatar_read_quantised(block, at + AVATAR_QUANTISED_BITS, &rotations);
+	if (result != XSDK_AVATAR_OK)
+		return result;
+	at += GROUPS * AVATAR_QUANTISED_BITS;
+	const uint32_t bone_bits = PARENT_BITS + avatar_quantised_bits(&positions) + avatar_quantised_bits(&rotations);
+	if (at + (uint64_t)bone_bits * count > (uint64_t)bytes * 8)
 		return XSDK_AVATAR_ERROR_FORMAT;
-	// Per bone: its parent, its rest position, its rest orientation as a quaternion's logarithm (SPECS.md, 4.4).
+	// Per bone: its parent (below it; the root's none), its rest position, its rest orientation as a quaternion's
+	// logarithm (SPECS.md, 4.4).
 	skeleton->bone_count = count;
 	for (uint32_t b = 0; b < count; b++) {
-		const uint32_t parent = stream_bits(block, at, 8);
-		at += 8;
+		const uint32_t parent = avatar_stream_bits(block, at, PARENT_BITS);
+		at += PARENT_BITS;
 		if (b == 0 ? parent != XSDK_AVATAR_NO_PARENT : parent >= b)
 			return XSDK_AVATAR_ERROR_FORMAT;
 		skeleton->parents[b] = (uint8_t)parent;
-		float values[2][3];
-		for (uint32_t g = 0; g < 2; g++)
-			for (uint32_t a = 0; a < 3; a++) {
-				values[g][a] = min[g][a] + (float)stream_bits(block, at, width[g][a]) * step[g] * axis_scale[a];
-				at += width[g][a];
-			}
-		memcpy(skeleton->positions[b], values[0], sizeof values[0]);
-		xsdk_avatar_quaternion_from_log(skeleton->rotations[b], values[1]);
+		float rotation_log[3];
+		avatar_dequantise(block, &at, &positions, skeleton->positions[b]);
+		avatar_dequantise(block, &at, &rotations, rotation_log);
+		xsdk_avatar_quaternion_from_log(skeleton->rotations[b], rotation_log);
 	}
 	return XSDK_AVATAR_OK;
 }
@@ -227,9 +197,31 @@ void xsdk_avatar_pose_reset(XsdkAvatarBonePose *pose, uint32_t bone_count)
 {
 	for (uint32_t b = 0; b < bone_count; b++) {
 		memset(&pose[b], 0, sizeof pose[b]);
-		quaternion_identity(pose[b].rotation);
+		avatar_quaternion_identity(pose[b].rotation);
 		pose[b].scale[0] = pose[b].scale[1] = pose[b].scale[2] = 1.0f;
 	}
+}
+
+// The bone's transform in its parent's frame: its rest transform relative to its parent's, then the pose's
+// translation, rotation and scale.
+static Transform local_transform(const XsdkAvatarSkeleton *skeleton, const XsdkAvatarBonePose *pose, uint32_t b)
+{
+	const uint32_t parent = skeleton->parents[b];
+	const Transform rest = rest_of(skeleton, b);
+	Transform local = rest;
+	if (parent != XSDK_AVATAR_NO_PARENT) {
+		const Transform parent_rest = rest_of(skeleton, parent);
+		const Transform inverse = inverse_rigid(&parent_rest);
+		local = compose(&inverse, &rest);
+	}
+	Transform change;
+	avatar_quaternion_matrix(pose->rotation, change.r);
+	for (uint32_t i = 0; i < 3; i++) {
+		for (uint32_t j = 0; j < 3; j++)
+			change.r[i][j] *= pose->scale[j];
+		change.t[i] = pose->translation[i];
+	}
+	return compose(&local, &change);
 }
 
 void xsdk_avatar_skin_matrices(
@@ -238,23 +230,10 @@ void xsdk_avatar_skin_matrices(
 	Transform world[XSDK_AVATAR_MAX_BONES];
 	for (uint32_t b = 0; b < skeleton->bone_count && b < XSDK_AVATAR_MAX_BONES; b++) {
 		const uint32_t parent = skeleton->parents[b];
-		const Transform rest = rest_of(skeleton, b);
-		// The bone's rest transform relative to its parent's, then the pose's translation, rotation and scale.
-		Transform local = rest;
-		if (parent != XSDK_AVATAR_NO_PARENT) {
-			const Transform parent_rest = rest_of(skeleton, parent);
-			const Transform inverse = inverse_rigid(&parent_rest);
-			local = compose(&inverse, &rest);
-		}
-		Transform change;
-		rotation_of(change.r, pose[b].rotation);
-		for (uint32_t i = 0; i < 3; i++) {
-			for (uint32_t j = 0; j < 3; j++)
-				change.r[i][j] *= pose[b].scale[j];
-			change.t[i] = pose[b].translation[i];
-		}
-		local = compose(&local, &change);
+		const Transform local = local_transform(skeleton, &pose[b], b);
 		world[b] = parent == XSDK_AVATAR_NO_PARENT ? local : compose(&world[parent], &local);
+		// The skin matrix takes a rest-pose vertex to the posed bone: out of the bone's rest frame, then into its pose.
+		const Transform rest = rest_of(skeleton, b);
 		const Transform inverse = inverse_rigid(&rest);
 		const Transform skin = compose(&world[b], &inverse);
 		for (uint32_t i = 0; i < 3; i++) {

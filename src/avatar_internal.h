@@ -9,6 +9,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "xsdk/avatar.h"
+
 // ---- Byte order: a value stored at p, most significant byte first (be) or last (le) ----
 
 static inline uint32_t avatar_be16(const uint8_t *p)
@@ -204,6 +206,65 @@ static inline float avatar_half_to_float(uint32_t half)
 static inline uint32_t avatar_round_up(uint32_t value, uint32_t multiple)
 {
 	return (value + multiple - 1) & ~(multiple - 1);
+}
+
+// ---- Quantised values (SPECS.md, sections 3.3, 4.4, 4.5) ----
+//
+// Mesh positions, skeleton blocks and animation channels store numbers as min + q * step * k: an unsigned integer q
+// of some bits, a float minimum and step, and a per-axis scale k (x, y, z), the same everywhere. The step is the same
+// float in every one seen, and opens every mesh, so its bits mark where a mesh starts.
+enum {
+	AVATAR_QUANTISATION_STEP_BITS = 0x36ED4402, // 7.071068e-6 as an IEEE 754 single
+};
+// k = (2, 2 / sqrt(1.5), sqrt(3)): fitted so that items meet the body (section 3.3); with k = (2, 2, 2) the head is
+// stretched and sits behind the neck.
+static const float avatar_axis_scale[3] = { 2.0f, 1.6329932f, 1.7320508f };
+
+// A quantised group as the skeleton and animation blocks store it, 146 bits of a bit stream: the step (f32), the
+// minimum per axis (f32 x 3), then each axis's width in bits (6 bits x 3); the values follow elsewhere, each axis
+// `width` bits (0 for an axis that doesn't vary).
+enum {
+	AVATAR_QUANTISED_STEP_AT = 0,
+	AVATAR_QUANTISED_MIN_AT = 32,
+	AVATAR_QUANTISED_WIDTH_AT = 128,
+	AVATAR_QUANTISED_WIDTH_BITS = 6,
+	AVATAR_QUANTISED_BITS = 146,
+	AVATAR_QUANTISED_MAX_WIDTH = 32, // 6 bits could say 63; more than a word isn't a value these blocks hold
+};
+
+typedef struct {
+	float step;
+	float min[3];
+	uint32_t width[3];
+} AvatarQuantised;
+
+// Reads a group at bit `at`; XSDK_AVATAR_ERROR_FORMAT if a width is more than a word.
+static inline int avatar_read_quantised(const uint8_t *data, uint64_t at, AvatarQuantised *q)
+{
+	q->step = avatar_float(avatar_stream_bits(data, at + AVATAR_QUANTISED_STEP_AT, 32));
+	for (uint32_t a = 0; a < 3; a++) {
+		q->min[a] = avatar_float(avatar_stream_bits(data, at + AVATAR_QUANTISED_MIN_AT + 32 * a, 32));
+		q->width[a] = avatar_stream_bits(
+			data, at + AVATAR_QUANTISED_WIDTH_AT + AVATAR_QUANTISED_WIDTH_BITS * a, AVATAR_QUANTISED_WIDTH_BITS);
+		if (q->width[a] > AVATAR_QUANTISED_MAX_WIDTH)
+			return XSDK_AVATAR_ERROR_FORMAT;
+	}
+	return 0;
+}
+
+// How many bits one value of the group takes: its three widths.
+static inline uint32_t avatar_quantised_bits(const AvatarQuantised *q)
+{
+	return q->width[0] + q->width[1] + q->width[2];
+}
+
+// The group's next value, from the bit stream at *at (moved past it): min + q * step * k per axis.
+static inline void avatar_dequantise(const uint8_t *data, uint64_t *at, const AvatarQuantised *q, float out[3])
+{
+	for (uint32_t a = 0; a < 3; a++) {
+		out[a] = q->min[a] + (float)avatar_stream_bits(data, *at, q->width[a]) * q->step * avatar_axis_scale[a];
+		*at += q->width[a];
+	}
 }
 
 // ---- Allocation (avatar_alloc.c) ----
