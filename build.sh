@@ -10,11 +10,12 @@ root="$(cd "$(dirname "$0")" && pwd)"
 if [ "${1:-}" = pc ]; then
 	xsdk="${2:-$root/../avatar_thrift_store/third_party/xsdk}"
 	# The asset and animation layers: the files that build for the PC.
-	portable=(animation description lzx model pack player skeleton stfs walk)
+	portable=(animation description lzx model pack player skeleton stfs own_animations)
 	sources=("${portable[@]/#/$root/src/avatar_}")
 	sources=("${sources[@]/%/.c}")
-	flags=(-std=c17 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src")
-	mkdir -p "$root/build/pc"
+	mkdir -p "$root/build/pc/generated"
+	python3 "$root/tools/gen_clips.py" "$root/animations" > "$root/build/pc/generated/avatar_clips.h"
+	flags=(-std=c17 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" -I"$root/build/pc/generated")
 	for tool in avatar_dump player_check walk_check anim_check; do
 		gcc "${flags[@]}" "${sources[@]}" "$root/tests/$tool.c" -lm -o "$root/build/pc/$tool"
 	done

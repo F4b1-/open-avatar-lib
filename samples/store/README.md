@@ -12,6 +12,8 @@ flakes is moved down as one and wrapped round, `mesh_draw_placed`).
 | Control | Action |
 |---|---|
 | left stick | walk, relative to the camera |
+| right trigger held | run instead of walking |
+| A | jump (the library's, in place) |
 | right stick | the camera round the avatar, and up and down |
 | LB held | the emote wheel: the right stick picks, letting go of LB plays it |
 | right stick click | 2 / 4 / 1 samples a pixel (2 after starting: nine avatars are drawn once per band) |

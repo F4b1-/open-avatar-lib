@@ -420,18 +420,31 @@ void xsdk_avatar_animation_sample(
 int xsdk_avatar_animation_load(
 	XsdkAvatarAnimation *animation, const void *bytes, uint32_t size_bytes, const XsdkAvatarSkeleton *skeleton);
 
-// A walk made in code, with no asset behind it (the stock animations have none; SPECS.md, section 4.5): one loop of
-// two steps. Each foot follows a gait (on the floor, moving back at the walking speed so that it doesn't slide;
-// landing on the heel, rolling off the toes, swinging forward clear of the floor) and the legs are solved to reach
-// it; the body sinks as the legs need, sways over the standing foot, the pelvis turns and dips, the chest and head
-// turn back, the arms swing against the legs. The upper body comes from base, a standing pose of XSDK_AVATAR_BONES
-// bones ("Animation Generic Stand 0" sampled at 0, say), made symmetric; or from the rest pose with the arms lowered
-// if base is NULL. The legs always start from the rest pose. The skeleton (or NULL) gives the legs' lengths; speed
-// (or NULL) gets the metres a second its steps cover, for playing it at the pace the avatar moves
-// (XsdkAvatarPlayer.speed = how fast it moves / speed). Free it with xsdk_avatar_animation_free. Until the library's
-// own authored walk (milestone 11).
-int xsdk_avatar_animation_walk(XsdkAvatarAnimation *walk, const XsdkAvatarBonePose *base,
-	const XsdkAvatarSkeleton *skeleton, float *speed);
+// The library's own walk: one loop of two steps, 1 s, keyed in Blender and shipped inside the library (MIT), a clip
+// for each body (gender XSDK_AVATAR_MALE or XSDK_AVATAR_FEMALE; the male's for anything else), its feet fitted to
+// that body so that a standing foot neither slides nor sinks. Its root motion is moved onto skeleton (or NULL to take
+// it as made). speed (or NULL) gets the metres a second its steps cover on this skeleton, measured as
+// xsdk_avatar_animation_ground_speed does: play it at XsdkAvatarPlayer.speed = how fast the avatar moves / speed.
+// Free it with xsdk_avatar_animation_free.
+int xsdk_avatar_animation_load_walk(
+	XsdkAvatarAnimation *walk, uint32_t gender, const XsdkAvatarSkeleton *skeleton, float *speed);
+// The library's own run, shipped the same way as the walk: one loop of two strides, 0.67 s (180 steps a minute), a
+// clip per body; each foot is down a third of the time, both feet off the floor between steps. speed (or NULL) gets
+// the metres a second its steps cover on this skeleton (about 1.95), measured as for the walk: play it at
+// XsdkAvatarPlayer.speed = how fast the avatar moves / speed. Free it with xsdk_avatar_animation_free.
+int xsdk_avatar_animation_load_run(
+	XsdkAvatarAnimation *run, uint32_t gender, const XsdkAvatarSkeleton *skeleton, float *speed);
+// The library's own jump, shipped the same way: a standing jump in place, once (XSDK_AVATAR_ONCE), 1.33 s, a clip
+// per body. From standing it dips into a crouch, leaves the floor at 0.5 s, is in the air 0.4 s (the body rising
+// about 0.2 m as gravity has it), lands toes first at 0.9 s, absorbs the landing and stands again; its first and
+// last frames are the same standing pose, for fading from and back to an idle. Feet on the floor neither slide nor
+// sink. Free it with xsdk_avatar_animation_free.
+int xsdk_avatar_animation_load_jump(XsdkAvatarAnimation *jump, uint32_t gender, const XsdkAvatarSkeleton *skeleton);
+// The speed of a walk or run that stays in place (the library's, or one of the title's own): how fast, in metres a
+// second, a foot on the floor moves back on this skeleton, the body facing +z. Measured on two points of each sole
+// (under the ankle and under the toe joint): whenever one is on the floor two frames running, its move between them;
+// the median of those moves. 0 if no foot is on the floor two frames running.
+float xsdk_avatar_animation_ground_speed(const XsdkAvatarAnimation *walk, const XsdkAvatarSkeleton *skeleton);
 
 // How an animation plays.
 enum {

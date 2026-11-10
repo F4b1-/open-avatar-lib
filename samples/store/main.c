@@ -1,8 +1,10 @@
 // Store: walk your avatar round the Avatar Thrift Store among NPCs, and emote from a wheel. The walk is the library's
-// (xsdk_avatar_animation_walk); the store (scene.c), its NPCs (npcs.c) and the wheel (wheel.c) are this sample's.
+// (xsdk_avatar_animation_load_walk), and so are the run and the jump (_load_run, _load_jump); the store (scene.c), its
+// NPCs (npcs.c) and the wheel (wheel.c) are this sample's.
 //
-// Left stick: walk. Right stick: turn the camera. LB held: the emote wheel; right stick picks, letting go of LB plays
-// it. Right stick click: 2 / 4 / 1 samples a pixel. Both triggers: screenshot. BACK: exit. Log: game:\store.log.
+// Left stick: walk (run while the right trigger is held). A: jump. Right stick: turn the camera. LB held: the emote
+// wheel; right stick picks, letting go of LB plays it. Right stick click: 2 / 4 / 1 samples a pixel. Both triggers:
+// screenshot. BACK: exit. Log: game:\store.log.
 
 #include <dirent.h>
 #include <math.h>
@@ -37,7 +39,9 @@ enum {
 };
 
 static const float pi = 3.14159265f;
-static const float top_speed = 1.4f, turn_rate = 9.0f, avatar_radius = 0.28f, shadow_radius = 0.38f;
+static const float turn_rate = 9.0f, avatar_radius = 0.28f, shadow_radius = 0.38f;
+// The stick pushed all the way: walking, and running while the right trigger is held (metres a second).
+static const float walk_top_speed = 1.4f, run_top_speed = 2.6f;
 static const float camera_distance = 3.0f, camera_height = 1.0f, fade_seconds = 0.25f;
 static const float talk_seconds = 3.5f, answer_reach = 2.5f;
 
@@ -131,7 +135,7 @@ static void load_customs(const XsdkAvatar *avatar)
 	(void)closedir(dir);
 }
 
-enum { STANDING, WALKING, EMOTING };
+enum { STANDING, WALKING, RUNNING, EMOTING, JUMPING };
 
 static double seconds_now(void)
 {
@@ -157,14 +161,16 @@ static XsdkAvatar *load_avatar(void)
 		: NULL;
 }
 
+// The library's own walk: the clip for the avatar's body, its root moved onto the avatar's skeleton; speed gets how
+// fast its steps go, for the pace.
 static bool make_walk(XsdkAvatar *avatar, XsdkAvatarAnimation *walk, float *speed)
 {
-	const XsdkAvatarAnimation *stand;
-	if (xsdk_avatar_stock_animation(XSDK_AVATAR_ANIMATION_STAND, &stand) != XSDK_AVATAR_OK)
-		return false;
-	static XsdkAvatarBonePose base[XSDK_AVATAR_BONES];
-	xsdk_avatar_animation_sample(stand, 0.0f, true, base);
-	return xsdk_avatar_animation_walk(walk, base, xsdk_avatar_skeleton(avatar), speed) == XSDK_AVATAR_OK;
+	XsdkAvatarInfo info;
+	xsdk_avatar_info(avatar, &info);
+	const int result = xsdk_avatar_animation_load_walk(walk, info.gender, xsdk_avatar_skeleton(avatar), speed);
+	xsdk_log_write("store: walk for the %s body: %d, %.3f m/s", info.gender == XSDK_AVATAR_FEMALE ? "female" : "male",
+		result, (double)*speed);
+	return result == XSDK_AVATAR_OK && *speed > 0.0f;
 }
 
 // A camera at eye looking at target: column-major view-projection, depth 0 to 1, and its right, up, forward axes.
@@ -251,6 +257,16 @@ int main(void)
 		return 1;
 	XsdkAvatarInfo info;
 	xsdk_avatar_info(avatar, &info);
+	static XsdkAvatarAnimation jump;
+	const int jump_result = xsdk_avatar_animation_load_jump(&jump, info.gender, xsdk_avatar_skeleton(avatar));
+	const bool can_jump = jump_result == XSDK_AVATAR_OK;
+	static XsdkAvatarAnimation run;
+	float run_speed = 0.0f;
+	const int run_result = xsdk_avatar_animation_load_run(&run, info.gender, xsdk_avatar_skeleton(avatar), &run_speed);
+	const bool can_run = run_result == XSDK_AVATAR_OK && run_speed > 0.0f;
+	xsdk_log_write("store: run for the %s body: %d, %.3f m/s", info.gender == XSDK_AVATAR_FEMALE ? "female" : "male",
+		run_result, (double)run_speed);
+	xsdk_log_write("store: jump for the %s body: %d", info.gender == XSDK_AVATAR_FEMALE ? "female" : "male", jump_result);
 	xsdk_log_write("store: %u NPCs", (unsigned)npcs_load());
 	scene_build();
 	load_customs(avatar);
@@ -279,10 +295,11 @@ int main(void)
 		INPUT_STATE input;
 		uint16_t buttons = 0;
 		float lx = 0, ly = 0, rx = 0, ry = 0;
-		bool triggers = false;
+		bool triggers = false, run_held = false;
 		if (XamInputGetState(0, 0, &input) == ERROR_SUCCESS) {
 			buttons = input.gamepad.buttons;
 			triggers = input.gamepad.left_trigger > 128 && input.gamepad.right_trigger > 128;
+			run_held = input.gamepad.right_trigger > 64;
 			lx = stick(input.gamepad.thumb_lx);
 			ly = stick(input.gamepad.thumb_ly);
 			rx = stick(input.gamepad.thumb_rx);
@@ -340,6 +357,15 @@ int main(void)
 		}
 		if (!wheel_open)
 			picked = -1;
+		// A: the library's jump, in place, once, then back to standing (or walking, if the stick is held by then).
+		if ((pressed & INPUT_GAMEPAD_A) && !wheel_open && can_jump && state != JUMPING) {
+			player->speed = 1.0f;
+			xsdk_avatar_player_play(player, &jump, XSDK_AVATAR_ONCE);
+			(void)xsdk_avatar_queue(avatar, XSDK_AVATAR_ANIMATION_STAND, XSDK_AVATAR_LOOP);
+			xsdk_avatar_set_face(avatar, &neutral);
+			talk_left = 0.0f;
+			state = JUMPING;
+		}
 		const double cpu_start = seconds_now();
 
 		const float forward[2] = { -sinf(camera_yaw), -cosf(camera_yaw) };
@@ -351,22 +377,29 @@ int main(void)
 			dz /= push;
 			push = 1.0f;
 		}
-		if (push > 0.0f) {
-			const float speed = push * top_speed;
+		if (state == JUMPING) {
+			// In place: the feet stay where they stood until the jump has landed and its standing has begun.
+			if (player->current.loop)
+				state = STANDING;
+		} else if (push > 0.0f) {
+			// Walking, or running while the right trigger is held: each clip played at the pace its feet cover the
+			// ground at.
+			const bool running = can_run && run_held;
+			const float speed = push * (running ? run_top_speed : walk_top_speed);
 			heading = turn_towards(heading, atan2f(dx, dz), turn_rate * dt);
 			x += dx / push * speed * dt;
 			z += dz / push * speed * dt;
 			scene_collide(&x, &z, avatar_radius);
 			npcs_collide(&x, &z, avatar_radius);
-			if (state != WALKING) {
-				xsdk_avatar_player_play(player, &walk, XSDK_AVATAR_LOOP);
+			if (running ? state != RUNNING : state != WALKING) {
+				xsdk_avatar_player_play(player, running ? &run : &walk, XSDK_AVATAR_LOOP);
 				xsdk_avatar_set_face(avatar, &neutral);
 				talk_left = 0.0f;
-				state = WALKING;
+				state = running ? RUNNING : WALKING;
 			}
-			const float pace = speed / walk_speed;
+			const float pace = speed / (running ? run_speed : walk_speed);
 			player->speed = pace < 0.6f ? 0.6f : pace > 2.0f ? 2.0f : pace;
-		} else if (state == WALKING) {
+		} else if (state == WALKING || state == RUNNING) {
 			player->speed = 1.0f;
 			(void)xsdk_avatar_play(avatar, XSDK_AVATAR_ANIMATION_STAND, XSDK_AVATAR_LOOP);
 			state = STANDING;
@@ -446,6 +479,8 @@ int main(void)
 	xsdk_avatar_close(avatar);
 	npcs_close();
 	xsdk_avatar_animation_free(&walk);
+	xsdk_avatar_animation_free(&jump);
+	xsdk_avatar_animation_free(&run);
 	for (uint32_t i = 0; i < custom_count; i++)
 		xsdk_avatar_animation_free(&customs[i]);
 	xsdk_avatar_shutdown();
