@@ -64,7 +64,7 @@ Read for facts only; nothing copied from them into the library.
 |---|---|---|---|
 | **Velocity** | https://github.com/hetelek/Velocity, `XboxInternals/AvatarAsset/` | GPL-3.0: read only, never copied | the STRB container, metadata, colour table, block ids, subcategories (FORMATS.md 3.1) |
 | **All-Stars Avatar** | https://github.com/Demaunix/All-Stars-Avatar, `src/avatar/tools/` | MIT | `avatar_model.py` (the model data layout, 3.3), `avatar_desc.py` (the description, 4.6), `avatar_colours.py` (the colour rule and face layers, 3.5-3.6); `avatar_texture.py` not read |
-| **360sona** | https://360sona.com | web editor | renders avatars in WebGL; reads and writes the 1000-byte description (4.6); its rigged export (R1, 4.7) |
+| **360sona** | https://360sona.com | web editor | Made sure its rigged export is compatible with the libraries import (R1, 4.7) |
 | **XNA reference** | XNA Game Studio 4.1, archived on learn.microsoft.com: "AvatarBone Enumeration" (dd940212), "AvatarEye", "AvatarEyebrow", "AvatarMouth Enumeration" (dd940224, dd940223, dd940225) | public documentation | bone names (4.4) and the face's expression names (3.5): names only, no code or material |
 | **Avatar Thrift Store** | its `core/` (STFS, GPD) and `docs/STATUS.md` | MIT | STFS block and hash table addressing, the asset id, the gender byte (3.1, 4.3) |
 | **xsdk** | https://github.com/xenosworks/xsdk (README, SCOPE.md, CODE_GUIDELINES.md, docs/HARDWARE.md) | MIT | the GPU's eDRAM layout, the clock, the conventions the library follows |
