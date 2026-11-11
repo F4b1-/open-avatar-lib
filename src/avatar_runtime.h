@@ -21,7 +21,8 @@ int avatar_content_read_stock(uint32_t record, void **strb, uint32_t *size_bytes
 // XSDK_AVATAR_ERROR_NOT_FOUND if the console doesn't have the item, the package's read error if it can't be read
 // (both logged), _MEMORY.
 int avatar_content_read_item(const uint8_t *id, void **strb, uint32_t *size_bytes);
-// The description of the profile signed in at user_index.
+// The description of the profile signed in at user_index (0-3). XSDK_AVATAR_ERROR_NOT_FOUND if no one is signed in
+// there or the system gives no description (logged).
 int avatar_content_read_profile(uint32_t user_index, uint8_t bytes[XSDK_AVATAR_DESCRIPTION_BYTES]);
 // Frees the stock animations and closes the pack.
 void avatar_content_close(void);
@@ -55,10 +56,10 @@ typedef struct {
 	AvatarPart parts[AVATAR_MAX_PARTS];
 	// Built from the body as decoded, before items' shapes move its vertices; bone_count 0 without a body.
 	XsdkAvatarSkeleton skeleton;
-	uint32_t gender;
-	uint32_t replaced_count;
-	uint32_t left_out_count;
-	float top;
+	uint32_t gender;         // XSDK_AVATAR_MALE or _FEMALE, by the body the description names
+	uint32_t replaced_count; // items the console lacks, given a stand-in
+	uint32_t left_out_count; // items left out: props, and missing ones no stand-in fills
+	float top;               // the highest vertex of any part, in metres: the avatar's height
 } AvatarOutfit;
 
 // The parts a description names: stock ones from the pack, items from their packages, stand-ins for missing ones.
@@ -69,6 +70,7 @@ int avatar_outfit_describe_stock(
 // Marks the triangles of part that the outfit's other parts hide (SPECS.md, section 3.7), numbered across its meshes:
 // a byte per triangle, 1 if hidden. The renderer and the export leave them out.
 void avatar_outfit_hidden(const AvatarOutfit *outfit, const AvatarPart *part, uint8_t *hidden, uint32_t triangles);
+// Frees every part's model, shape and face layers, and empties the outfit (the struct itself is the caller's).
 void avatar_outfit_free(AvatarOutfit *outfit);
 
 // ---- avatar_export.c: an outfit as a rig to animate (SPECS.md, section 4.9); no GPU ----
@@ -97,6 +99,8 @@ int avatar_png_encode(const uint8_t *rgba, uint32_t width, uint32_t height, uint
 
 enum {
 	AVATAR_MAX_DRAWS = 64,
+	AVATAR_DRAW_TEXTURES = AVATAR_HEAD_LAYERS, // the most a draw binds: the Head's layers (an item binds 3)
+	AVATAR_DRAW_CONSTANTS = 1 + 3 * AVATAR_HEAD_LAYERS, // the most a draw sets: the Head's skin and layer colours
 };
 
 enum {
@@ -118,10 +122,10 @@ typedef struct {
 	uint32_t vertex_count;
 	uint32_t index_start; // in indices, even
 	uint32_t index_count;
-	uint32_t texture_count;                // 3 for an item, 6 for the Head
-	const XsdkTexture *textures[6];        // by sampler binding
-	const XsdkSamplerState *samplers[6];   // wrap or clamp, as each binding's address mode says
-	float constants[19][4];                // the pixel shader's push constants
+	uint32_t texture_count;                                  // 3 for an item, 6 for the Head
+	const XsdkTexture *textures[AVATAR_DRAW_TEXTURES];       // by sampler binding
+	const XsdkSamplerState *samplers[AVATAR_DRAW_TEXTURES];  // wrap or clamp, as each binding's address mode says
+	float constants[AVATAR_DRAW_CONSTANTS][4];               // the pixel shader's push constants
 	uint32_t constant_count;
 } AvatarDraw;
 
@@ -140,8 +144,9 @@ typedef struct {
 	uint32_t cpu_bytes; // its heap memory beside the struct
 } AvatarDrawable;
 
-// The shaders, samplers and blank texture, made on first use.
+// The shaders, samplers and blank texture, made on first use. XSDK_AVATAR_ERROR_GPU if the GPU layer refuses one.
 int avatar_render_open(void);
+// Frees the shaders and blank texture (xsdk_avatar_shutdown); the next avatar_render_open makes them again.
 void avatar_render_close(void);
 // Puts the outfit's vertices, indices and textures in GPU memory; the outfit may be freed after.
 int avatar_render_build(AvatarDrawable *drawable, const AvatarOutfit *outfit);
@@ -150,6 +155,7 @@ int avatar_render_build(AvatarDrawable *drawable, const AvatarOutfit *outfit);
 // the frames each layer has).
 void avatar_render_draw(const AvatarDrawable *drawable, const float view_projection[16], const float mvp[16],
 	const float world[16], const float (*skin)[12], const AvatarFaceFrames *face);
+// Frees its GPU memory and textures, and empties it; only after a fence past the last frame that drew it.
 void avatar_render_free(AvatarDrawable *drawable);
 
 #endif

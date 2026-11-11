@@ -44,7 +44,7 @@ enum {
 	ITEM_CONSTANTS = 4,
 	HEAD_SKIN = 0,
 	HEAD_LAYER_COLORS = 1,
-	HEAD_CONSTANTS = HEAD_LAYER_COLORS + 3 * AVATAR_HEAD_LAYERS,
+	HEAD_CONSTANTS = HEAD_LAYER_COLORS + 3 * AVATAR_HEAD_LAYERS, // AVATAR_DRAW_CONSTANTS
 	// Then the lighting (LIGHT_MEMBERS): the light's direction and colour, the sky and the ground, the camera's
 	// right, up and forward axes.
 	LIGHT_VECTORS = 7,
