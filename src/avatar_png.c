@@ -189,7 +189,8 @@ static uint32_t longest_match(const Chains *c, const uint8_t *in, size_t n, size
 static bool deflate_fixed(Out *o, const uint8_t *in, size_t n)
 {
 	bool ok = false;
-	Chains c = { avatar_malloc(sizeof(int32_t) << HASH_BITS, "a PNG"), avatar_malloc(sizeof(int32_t) * WINDOW, "a PNG") };
+	Chains c = { avatar_malloc(sizeof(int32_t) << HASH_BITS, "a PNG"),
+		avatar_malloc(sizeof(int32_t) * WINDOW, "a PNG") };
 	if (!c.head || !c.prev)
 		goto done;
 	for (size_t i = 0; i < (size_t)1 << HASH_BITS; i++)

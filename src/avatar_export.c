@@ -21,9 +21,19 @@ enum {
 	GL_FLOAT = 5126,
 	GL_ARRAY_BUFFER = 34962,
 	GL_ELEMENT_ARRAY_BUFFER = 34963,
+	// The binary container (glTF 2.0, section 4.4): a 12-byte header (magic, version, total length), then chunks, each
+	// an 8-byte header (length, type) and its data padded to 4 bytes. Every word little-endian.
 	GLB_MAGIC = 0x46546C67, // "glTF"
-	GLB_JSON = 0x4E4F534A,  // "JSON"
-	GLB_BIN = 0x004E4942,   // "BIN"
+	GLB_VERSION = 2,
+	GLB_HEADER_BYTES = 12,
+	GLB_CHUNK_HEADER_BYTES = 8,
+	GLB_ALIGN = 4,
+	GLB_JSON = 0x4E4F534A, // "JSON"
+	GLB_BIN = 0x004E4942,  // "BIN"
+	// The nodes: the bones 0-70, then the skinned mesh and the armature above it all.
+	NODE_MESH = XSDK_AVATAR_BONES,
+	NODE_ARMATURE = XSDK_AVATAR_BONES + 1,
+	BUFFER_FIRST_CAPACITY = 4096,
 };
 
 // 360sona's names (SPECS.md, section 4.7), as tools/anim_convert.py's HUMANOID table reads them; NULL: "shape_NN".
@@ -102,7 +112,7 @@ static bool reserve(Buffer *b, size_t more)
 		return false;
 	if (b->length + more <= b->capacity)
 		return true;
-	size_t capacity = b->capacity ? b->capacity : 4096;
+	size_t capacity = b->capacity ? b->capacity : BUFFER_FIRST_CAPACITY;
 	while (capacity < b->length + more)
 		capacity *= 2;
 	char *data = avatar_realloc(b->data, capacity, "an export");
@@ -213,38 +223,33 @@ static void clean_name(char *out, size_t size, const char *in)
 	out[n] = 0;
 }
 
-// One mesh of a part as a primitive: its vertices, and its triangles other parts don't hide (hidden, from the
-// part's first triangle at triangle). Returns whether it kept any.
-static bool add_mesh(Gltf *g, const XsdkAvatarMesh *mesh, const uint8_t *hidden, uint32_t triangle, uint32_t material,
-	uint32_t uv_set)
+// The mesh's triangles other parts don't hide (hidden, from the part's first triangle at triangle), as indices;
+// returns how many indices it kept.
+static uint32_t keep_triangles(const XsdkAvatarMesh *mesh, const uint8_t *hidden, uint32_t triangle, uint16_t *indices)
 {
-	const uint32_t n = mesh->vertex_count;
-	uint16_t *indices = avatar_malloc(mesh->index_count ? mesh->index_count * 2u : 2u, "an export");
-	uint8_t *joints = avatar_malloc(n ? n * 4u : 4u, "an export"), *weights = avatar_malloc(n ? n * 4u : 4u, "an export");
-	if (!indices || !joints || !weights) {
-		free(indices);
-		free(joints);
-		free(weights);
-		g->bin.failed = true;
-		return false;
-	}
 	uint32_t kept = 0;
 	for (uint32_t t = 0; t < mesh->index_count / 3; t++)
 		if (!hidden[triangle + t])
 			for (uint32_t c = 0; c < 3; c++)
 				indices[kept++] = mesh->indices[3 * t + c];
-	if (!kept || !n) {
-		free(indices);
-		free(joints);
-		free(weights);
-		return false;
-	}
-	// As the renderer takes them: a mesh naming no bone follows the root; a joint without weight given as 0.
-	for (uint32_t i = 0; i < 4 * n; i++) {
+	return kept;
+}
+
+// Each vertex's four joints and weights, as the renderer takes them: a mesh naming no bone follows the root; a joint
+// without weight given as 0.
+static void skin_attributes(const XsdkAvatarMesh *mesh, uint8_t *joints, uint8_t *weights)
+{
+	for (uint32_t i = 0; i < 4 * mesh->vertex_count; i++) {
 		const uint32_t bone = mesh->bones && mesh->bones[i] < XSDK_AVATAR_BONES ? mesh->bones[i] : 0;
 		weights[i] = mesh->weights ? mesh->weights[i] : (i % 4 ? 0 : 255);
 		joints[i] = weights[i] ? (uint8_t)bone : 0;
 	}
+}
+
+// The positions' accessor, with the bounds glTF requires of it.
+static uint32_t add_positions(Gltf *g, const XsdkAvatarMesh *mesh)
+{
+	const uint32_t n = mesh->vertex_count;
 	float lo[3] = { 1e30f, 1e30f, 1e30f }, hi[3] = { -1e30f, -1e30f, -1e30f };
 	for (uint32_t v = 0; v < n; v++)
 		for (uint32_t a = 0; a < 3; a++) {
@@ -255,37 +260,67 @@ static bool add_mesh(Gltf *g, const XsdkAvatarMesh *mesh, const uint8_t *hidden,
 	char bounds[200];
 	snprintf(bounds, sizeof bounds, ",\"min\":[%.6f,%.6f,%.6f],\"max\":[%.6f,%.6f,%.6f]", (double)lo[0],
 		(double)lo[1], (double)lo[2], (double)hi[0], (double)hi[1], (double)hi[2]);
-	const uint32_t position =
-		add_accessor(g, mesh->positions, (size_t)n * 12, GL_ARRAY_BUFFER, GL_FLOAT, n, "VEC3", bounds);
+	return add_accessor(g, mesh->positions, (size_t)n * 12, GL_ARRAY_BUFFER, GL_FLOAT, n, "VEC3", bounds);
+}
+
+// The texture coordinates the material's baked texture is drawn in (set uv_set), as TEXCOORD_0: the attribute's text
+// into texcoord, "" if there are none.
+static void add_texcoord(Gltf *g, const XsdkAvatarMesh *mesh, uint32_t uv_set, char *texcoord, size_t size)
+{
+	texcoord[0] = 0;
+	if (uv_set == NO_TEXCOORD || !mesh->uv_sets)
+		return;
+	const uint32_t n = mesh->vertex_count, set = uv_set < mesh->uv_sets ? uv_set : 0;
+	float *uvs = avatar_malloc((size_t)n * 8, "an export");
+	if (!uvs) {
+		g->bin.failed = true;
+		return;
+	}
+	for (uint32_t v = 0; v < n; v++)
+		memcpy(uvs + 2 * v, mesh->uvs + 2 * ((size_t)mesh->uv_sets * v + set), 8);
+	snprintf(texcoord, size, ",\"TEXCOORD_0\":%u",
+		(unsigned)add_accessor(g, uvs, (size_t)n * 8, GL_ARRAY_BUFFER, GL_FLOAT, n, "VEC2", ""));
+	free(uvs);
+}
+
+// One mesh of a part as a primitive: its vertices, and its triangles other parts don't hide (hidden, from the
+// part's first triangle at triangle). Returns whether it kept any.
+static bool add_mesh(Gltf *g, const XsdkAvatarMesh *mesh, const uint8_t *hidden, uint32_t triangle, uint32_t material,
+	uint32_t uv_set)
+{
+	bool added = false;
+	const uint32_t n = mesh->vertex_count;
+	uint16_t *indices = avatar_malloc(mesh->index_count ? mesh->index_count * 2u : 2u, "an export");
+	uint8_t *joints = avatar_malloc(n ? n * 4u : 4u, "an export");
+	uint8_t *weights = avatar_malloc(n ? n * 4u : 4u, "an export");
+	if (!indices || !joints || !weights) {
+		g->bin.failed = true;
+		goto done;
+	}
+	const uint32_t kept = keep_triangles(mesh, hidden, triangle, indices);
+	if (!kept || !n)
+		goto done;
+	skin_attributes(mesh, joints, weights);
+	const uint32_t position = add_positions(g, mesh);
 	const uint32_t normal = add_accessor(g, mesh->normals, (size_t)n * 12, GL_ARRAY_BUFFER, GL_FLOAT, n, "VEC3", "");
 	const uint32_t joint = add_accessor(g, joints, (size_t)n * 4, GL_ARRAY_BUFFER, GL_UNSIGNED_BYTE, n, "VEC4", "");
 	const uint32_t weight = add_accessor(
 		g, weights, (size_t)n * 4, GL_ARRAY_BUFFER, GL_UNSIGNED_BYTE, n, "VEC4", ",\"normalized\":true");
 	const uint32_t index =
 		add_accessor(g, indices, (size_t)kept * 2, GL_ELEMENT_ARRAY_BUFFER, GL_UNSIGNED_SHORT, kept, "SCALAR", "");
-	// The texture coordinates the material's baked texture is drawn in, as TEXCOORD_0.
-	char texcoord[40] = "";
-	if (uv_set != NO_TEXCOORD && mesh->uv_sets) {
-		const uint32_t set = uv_set < mesh->uv_sets ? uv_set : 0;
-		float *uvs = avatar_malloc((size_t)n * 8, "an export");
-		if (uvs) {
-			for (uint32_t v = 0; v < n; v++)
-				memcpy(uvs + 2 * v, mesh->uvs + 2 * ((size_t)mesh->uv_sets * v + set), 8);
-			snprintf(texcoord, sizeof texcoord, ",\"TEXCOORD_0\":%u",
-				(unsigned)add_accessor(g, uvs, (size_t)n * 8, GL_ARRAY_BUFFER, GL_FLOAT, n, "VEC2", ""));
-			free(uvs);
-		} else
-			g->bin.failed = true;
-	}
+	char texcoord[40];
+	add_texcoord(g, mesh, uv_set, texcoord, sizeof texcoord);
 	item(&g->primitives,
 		"{\"attributes\":{\"POSITION\":%u,\"NORMAL\":%u,\"JOINTS_0\":%u,\"WEIGHTS_0\":%u%s},\"indices\":%u,"
 		"\"material\":%u}",
 		(unsigned)position, (unsigned)normal, (unsigned)joint, (unsigned)weight, texcoord, (unsigned)index,
 		(unsigned)material);
+	added = true;
+done:
 	free(indices);
 	free(joints);
 	free(weights);
-	return true;
+	return added;
 }
 
 // The joints, nodes 0-70: each placed from its parent, no rotation; their inverse bind matrices move back from each
@@ -325,76 +360,95 @@ static uint32_t add_skeleton(Gltf *g, const XsdkAvatarSkeleton *skeleton)
 	return add_accessor(g, ibm, sizeof ibm, 0, GL_FLOAT, XSDK_AVATAR_BONES, "MAT4", "");
 }
 
-// The parts as one mesh of primitives, a material for each of their materials with its textures baked (avatar_bake.c).
+// A material with its baked texture: the PNG as an image, a texture through the repeating or clamping sampler.
+static void add_textured_material(Gltf *g, const char *name, uint32_t k, const AvatarBake *bake, const uint8_t *png,
+	uint32_t png_bytes)
+{
+	const uint32_t view = add_view(g, png, png_bytes, 0, 1);
+	item(&g->images, "{\"name\":\"%s %u\",\"bufferView\":%u,\"mimeType\":\"image/png\"}", name, (unsigned)k,
+		(unsigned)view);
+	item(&g->textures, "{\"sampler\":%u,\"source\":%u}", bake->clamp ? 1u : 0u, (unsigned)g->images.count - 1);
+	item(&g->materials,
+		"{\"name\":\"%s %u\",\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":%u},"
+		"\"metallicFactor\":0,\"roughnessFactor\":0.9}%s}",
+		name, (unsigned)k, (unsigned)g->textures.count - 1, bake->see_through ? ",\"alphaMode\":\"BLEND\"" : "");
+}
+
+// A material without a texture to bake: the part's first colour, as before textures.
+static void add_plain_material(Gltf *g, const char *name, uint32_t k, const AvatarPart *part)
+{
+	const float *c = part->is_head ? part->skin : part->tinted ? part->colors[0] : plain_grey;
+	item(&g->materials,
+		"{\"name\":\"%s %u\",\"pbrMetallicRoughness\":{\"baseColorFactor\":[%.4f,%.4f,%.4f,1],"
+		"\"metallicFactor\":0,\"roughnessFactor\":0.9}}",
+		name, (unsigned)k, (double)c[0], (double)c[1], (double)c[2]);
+}
+
+// Material k of a part: its textures baked into one (avatar_bake.c), the meshes that use it, and a glTF material if
+// any mesh kept a triangle. A mesh naming a material the model doesn't have goes with the first. False if memory ran
+// out (not a plain material instead: the export fails).
+static bool add_material(Gltf *g, const AvatarPart *part, uint32_t k, const uint8_t *hidden, const char *name)
+{
+	const XsdkAvatarModel *model = &part->model;
+	const uint32_t materials = model->material_count ? model->material_count : 1;
+	AvatarBake bake;
+	const int baked = avatar_bake_material(part, k, hidden, &bake);
+	if (baked == XSDK_AVATAR_ERROR_MEMORY)
+		return false;
+	const bool textured = baked == XSDK_AVATAR_OK;
+	const uint32_t material = g->materials.count;
+	bool any = false;
+	for (uint32_t m = 0, triangle = 0; m < model->mesh_count; m++) {
+		const XsdkAvatarMesh *mesh = &model->meshes[m];
+		if (mesh->material == k || (k == 0 && mesh->material >= materials))
+			any |= add_mesh(g, mesh, hidden, triangle, material, textured ? bake.uv_set : NO_TEXCOORD);
+		triangle += mesh->index_count / 3;
+	}
+	uint8_t *png = NULL;
+	uint32_t png_bytes = 0;
+	const int encoded = any && textured ? avatar_png_encode(bake.rgba, bake.width, bake.height, &png, &png_bytes)
+										: XSDK_AVATAR_ERROR_NOT_FOUND;
+	if (encoded == XSDK_AVATAR_OK)
+		add_textured_material(g, name, k, &bake, png, png_bytes);
+	else if (any && encoded != XSDK_AVATAR_ERROR_MEMORY)
+		add_plain_material(g, name, k, part);
+	free(png);
+	if (textured)
+		free(bake.rgba);
+	return encoded != XSDK_AVATAR_ERROR_MEMORY;
+}
+
+// A part's meshes, a glTF material for each of its materials. False if memory ran out.
+static bool add_part(Gltf *g, const AvatarOutfit *outfit, const AvatarPart *part)
+{
+	const XsdkAvatarModel *model = &part->model;
+	uint32_t triangles = 0;
+	for (uint32_t m = 0; m < model->mesh_count; m++)
+		triangles += model->meshes[m].index_count / 3;
+	if (!triangles)
+		return true;
+	uint8_t *hidden = avatar_malloc(triangles, "an export");
+	if (!hidden)
+		return false;
+	avatar_outfit_hidden(outfit, part, hidden, triangles);
+	char name[64];
+	clean_name(name, sizeof name, part->label);
+	bool ok = true;
+	const uint32_t materials = model->material_count ? model->material_count : 1;
+	for (uint32_t k = 0; k < materials && ok; k++)
+		ok = add_material(g, part, k, hidden, name);
+	free(hidden);
+	return ok;
+}
+
+// The parts as one mesh of primitives.
 static void add_parts(Gltf *g, const AvatarOutfit *outfit)
 {
-	for (uint32_t p = 0; p < outfit->part_count; p++) {
-		const AvatarPart *part = &outfit->parts[p];
-		const XsdkAvatarModel *model = &part->model;
-		uint32_t triangles = 0;
-		for (uint32_t m = 0; m < model->mesh_count; m++)
-			triangles += model->meshes[m].index_count / 3;
-		if (!triangles)
-			continue;
-		uint8_t *hidden = avatar_malloc(triangles, "an export");
-		if (!hidden) {
+	for (uint32_t p = 0; p < outfit->part_count; p++)
+		if (!add_part(g, outfit, &outfit->parts[p])) {
 			g->bin.failed = true;
 			return;
 		}
-		avatar_outfit_hidden(outfit, part, hidden, triangles);
-		char name[64];
-		clean_name(name, sizeof name, part->label);
-		// A glTF material per material of the part, with its textures baked into one; a mesh naming a material the
-		// model doesn't have goes with the first.
-		const uint32_t materials = model->material_count ? model->material_count : 1;
-		for (uint32_t k = 0; k < materials; k++) {
-			AvatarBake bake;
-			const int baked = avatar_bake_material(part, k, hidden, &bake);
-			if (baked == XSDK_AVATAR_ERROR_MEMORY) { // not a plain material instead: the export fails
-				g->bin.failed = true;
-				free(hidden);
-				return;
-			}
-			const bool textured = baked == XSDK_AVATAR_OK;
-			const uint32_t material = g->materials.count;
-			bool any = false;
-			for (uint32_t m = 0, triangle = 0; m < model->mesh_count; m++) {
-				const XsdkAvatarMesh *mesh = &model->meshes[m];
-				if (mesh->material == k || (k == 0 && mesh->material >= materials))
-					any |= add_mesh(g, mesh, hidden, triangle, material, textured ? bake.uv_set : NO_TEXCOORD);
-				triangle += mesh->index_count / 3;
-			}
-			uint8_t *png = NULL;
-			uint32_t png_bytes = 0;
-			const int encoded = any && textured ? avatar_png_encode(bake.rgba, bake.width, bake.height, &png, &png_bytes)
-												: XSDK_AVATAR_ERROR_NOT_FOUND;
-			if (encoded == XSDK_AVATAR_ERROR_MEMORY)
-				g->bin.failed = true;
-			if (encoded == XSDK_AVATAR_OK) {
-				const uint32_t view = add_view(g, png, png_bytes, 0, 1);
-				item(&g->images, "{\"name\":\"%s %u\",\"bufferView\":%u,\"mimeType\":\"image/png\"}", name,
-					(unsigned)k, (unsigned)view);
-				item(&g->textures, "{\"sampler\":%u,\"source\":%u}", bake.clamp ? 1u : 0u,
-					(unsigned)g->images.count - 1);
-				item(&g->materials,
-					"{\"name\":\"%s %u\",\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":%u},"
-					"\"metallicFactor\":0,\"roughnessFactor\":0.9}%s}",
-					name, (unsigned)k, (unsigned)g->textures.count - 1,
-					bake.see_through ? ",\"alphaMode\":\"BLEND\"" : "");
-			} else if (any) {
-				// No texture to bake: the part's first colour, as before textures.
-				const float *c = part->is_head ? part->skin : part->tinted ? part->colors[0] : plain_grey;
-				item(&g->materials,
-					"{\"name\":\"%s %u\",\"pbrMetallicRoughness\":{\"baseColorFactor\":[%.4f,%.4f,%.4f,1],"
-					"\"metallicFactor\":0,\"roughnessFactor\":0.9}}",
-					name, (unsigned)k, (double)c[0], (double)c[1], (double)c[2]);
-			}
-			free(png);
-			if (textured)
-				free(bake.rgba);
-		}
-		free(hidden);
-	}
 }
 
 static void free_gltf(Gltf *g)
@@ -405,87 +459,116 @@ static void free_gltf(Gltf *g)
 		free(buffers[i]->data);
 }
 
+// Whether any list ran out of memory.
+static bool gltf_failed(const Gltf *g)
+{
+	return g->bin.failed || g->views.failed || g->accessors.failed || g->primitives.failed || g->materials.failed ||
+		g->nodes.failed || g->images.failed || g->textures.failed;
+}
+
+// The glTF JSON into *json: the scene, the nodes (with the mesh and the armature), the skin of all 71 joints, the mesh,
+// the materials, the baked textures if any (glTF allows no empty lists), the buffer, its views and accessors. Closes
+// each list's text with its terminating zero. False if memory ran out.
+static bool write_json(Gltf *g, uint32_t ibm, Buffer *json)
+{
+	bool ok = false;
+	Buffer joints = { 0 }, pictures = { 0 };
+	for (uint32_t b = 0; b < XSDK_AVATAR_BONES; b++)
+		item(&joints, "%u", (unsigned)b);
+	append(&joints, "", 1);
+	item(&g->nodes, "{\"name\":\"Avatar mesh\",\"mesh\":0,\"skin\":0}");
+	item(&g->nodes, "{\"name\":\"Avatar\",\"children\":[0,%u]}", (unsigned)NODE_MESH);
+	Buffer *lists[] = { &g->views, &g->accessors, &g->primitives, &g->materials, &g->nodes };
+	for (size_t i = 0; i < sizeof lists / sizeof lists[0]; i++)
+		append(lists[i], "", 1);
+	if (g->images.count) {
+		append(&g->images, "", 1);
+		append(&g->textures, "", 1);
+		text(&pictures, "\"images\":[%s],\"textures\":[%s],\"samplers\":[%s],", g->images.data, g->textures.data,
+			samplers);
+	}
+	append(&pictures, "", 1);
+	if (gltf_failed(g) || joints.failed || pictures.failed)
+		goto done;
+	text(json,
+		"{\"asset\":{\"version\":\"2.0\",\"generator\":\"xsdk avatar library\"},"
+		"\"scene\":0,\"scenes\":[{\"name\":\"Avatar\",\"nodes\":[%u]}],"
+		"\"nodes\":[%s],"
+		"\"skins\":[{\"name\":\"Avatar\",\"inverseBindMatrices\":%u,\"skeleton\":0,\"joints\":[%s]}],"
+		"\"meshes\":[{\"name\":\"Avatar\",\"primitives\":[%s]}],"
+		"\"materials\":[%s],%s"
+		"\"buffers\":[{\"byteLength\":%u}],"
+		"\"bufferViews\":[%s],"
+		"\"accessors\":[%s]}",
+		(unsigned)NODE_ARMATURE, g->nodes.data, (unsigned)ibm, joints.data, g->primitives.data, g->materials.data,
+		pictures.data, (unsigned)g->bin.length, g->views.data, g->accessors.data);
+	ok = !json->failed;
+done:
+	free(joints.data);
+	free(pictures.data);
+	return ok;
+}
+
+static void store_le32(uint8_t *p, uint32_t value)
+{
+	for (uint32_t k = 0; k < 4; k++)
+		p[k] = (uint8_t)(value >> (8 * k));
+}
+
+// The container: its header, the JSON chunk padded with spaces, the binary chunk padded with zeros (add_view leaves
+// it a multiple of 4 bytes). Malloc'd; NULL if out of memory.
+static uint8_t *pack_glb(const Buffer *json, const Buffer *bin, uint32_t *total)
+{
+	const uint32_t json_padded = (uint32_t)avatar_round_up((uint32_t)json->length, GLB_ALIGN);
+	const uint32_t bin_length = (uint32_t)bin->length;
+	*total = GLB_HEADER_BYTES + GLB_CHUNK_HEADER_BYTES + json_padded + GLB_CHUNK_HEADER_BYTES + bin_length;
+	uint8_t *out = avatar_malloc(*total, "an export");
+	if (!out)
+		return NULL;
+	uint8_t *p = out;
+	store_le32(p, GLB_MAGIC);
+	store_le32(p + 4, GLB_VERSION);
+	store_le32(p + 8, *total);
+	p += GLB_HEADER_BYTES;
+	store_le32(p, json_padded);
+	store_le32(p + 4, GLB_JSON);
+	p += GLB_CHUNK_HEADER_BYTES;
+	memcpy(p, json->data, json->length);
+	memset(p + json->length, ' ', json_padded - json->length);
+	p += json_padded;
+	store_le32(p, bin_length);
+	store_le32(p + 4, GLB_BIN);
+	p += GLB_CHUNK_HEADER_BYTES;
+	memcpy(p, bin->data, bin_length);
+	return out;
+}
+
 int avatar_export_outfit(const AvatarOutfit *outfit, void **glb, uint32_t *size_bytes)
 {
 	*glb = NULL;
 	*size_bytes = 0;
 	if (outfit->skeleton.bone_count != XSDK_AVATAR_BONES)
 		return XSDK_AVATAR_ERROR_FORMAT; // no body
+	int result = XSDK_AVATAR_ERROR_MEMORY;
 	Gltf g = { 0 };
+	Buffer json = { 0 };
 	const uint32_t ibm = add_skeleton(&g, &outfit->skeleton);
 	add_parts(&g, outfit);
-	// Node 71 the skinned mesh, node 72 the armature above it all.
-	Buffer joints = { 0 };
-	for (uint32_t b = 0; b < XSDK_AVATAR_BONES; b++)
-		item(&joints, "%u", (unsigned)b);
-	append(&joints, "", 1);
-	item(&g.nodes, "{\"name\":\"Avatar mesh\",\"mesh\":0,\"skin\":0}");
-	item(&g.nodes, "{\"name\":\"Avatar\",\"children\":[0,%u]}", (unsigned)XSDK_AVATAR_BONES);
-	append(&g.views, "", 1);
-	append(&g.accessors, "", 1);
-	append(&g.primitives, "", 1);
-	append(&g.materials, "", 1);
-	append(&g.nodes, "", 1);
-	// The baked textures, if any: glTF allows no empty lists.
-	Buffer pictures = { 0 };
-	if (g.images.count) {
-		append(&g.images, "", 1);
-		append(&g.textures, "", 1);
-		text(&pictures, "\"images\":[%s],\"textures\":[%s],\"samplers\":[%s],", g.images.data, g.textures.data,
-			samplers);
+	if (!gltf_failed(&g) && !g.primitives.count) {
+		result = XSDK_AVATAR_ERROR_FORMAT; // nothing to show: every part hidden or empty
+		goto done;
 	}
-	append(&pictures, "", 1);
-	Buffer json = { 0 };
-	const bool out_of_memory = g.bin.failed || g.views.failed || g.accessors.failed || g.primitives.failed ||
-		g.materials.failed || g.nodes.failed || g.images.failed || g.textures.failed || pictures.failed ||
-		joints.failed;
-	const bool built = !out_of_memory && g.primitives.count;
-	if (built)
-		text(&json,
-			"{\"asset\":{\"version\":\"2.0\",\"generator\":\"xsdk avatar library\"},"
-			"\"scene\":0,\"scenes\":[{\"name\":\"Avatar\",\"nodes\":[%u]}],"
-			"\"nodes\":[%s],"
-			"\"skins\":[{\"name\":\"Avatar\",\"inverseBindMatrices\":%u,\"skeleton\":0,\"joints\":[%s]}],"
-			"\"meshes\":[{\"name\":\"Avatar\",\"primitives\":[%s]}],"
-			"\"materials\":[%s],%s"
-			"\"buffers\":[{\"byteLength\":%u}],"
-			"\"bufferViews\":[%s],"
-			"\"accessors\":[%s]}",
-			(unsigned)XSDK_AVATAR_BONES + 1, g.nodes.data, (unsigned)ibm, joints.data, g.primitives.data,
-			g.materials.data, pictures.data, (unsigned)g.bin.length, g.views.data, g.accessors.data);
-	free(joints.data);
-	free(pictures.data);
-	if (!built || json.failed) {
-		// Memory ran out, or there was nothing to show (every part hidden or empty): a format error.
-		const int result = out_of_memory || json.failed ? XSDK_AVATAR_ERROR_MEMORY : XSDK_AVATAR_ERROR_FORMAT;
-		free(json.data);
-		free_gltf(&g);
-		return result;
-	}
-	// The container (glTF 2.0, little-endian): a header, the JSON padded with spaces, the binary padded with zeros.
-	const uint32_t json_padded = (uint32_t)(json.length + 3) & ~3u, bin_length = (uint32_t)g.bin.length;
-	const uint32_t total = 12 + 8 + json_padded + 8 + bin_length;
-	uint8_t *out = avatar_malloc(total, "an export");
-	if (out) {
-		const uint32_t words[5] = { GLB_MAGIC, 2, total, json_padded, GLB_JSON };
-		for (uint32_t w = 0; w < 5; w++)
-			for (uint32_t k = 0; k < 4; k++)
-				out[4 * w + k] = (uint8_t)(words[w] >> (8 * k));
-		memcpy(out + 20, json.data, json.length);
-		memset(out + 20 + json.length, ' ', json_padded - json.length);
-		const uint32_t chunk[2] = { bin_length, GLB_BIN };
-		for (uint32_t w = 0; w < 2; w++)
-			for (uint32_t k = 0; k < 4; k++)
-				out[20 + json_padded + 4 * w + k] = (uint8_t)(chunk[w] >> (8 * k));
-		memcpy(out + 28 + json_padded, g.bin.data, bin_length);
-	}
-	free(json.data);
-	free_gltf(&g);
+	uint32_t total = 0;
+	uint8_t *out = write_json(&g, ibm, &json) ? pack_glb(&json, &g.bin, &total) : NULL;
 	if (!out)
-		return XSDK_AVATAR_ERROR_MEMORY;
+		goto done;
 	*glb = out;
 	*size_bytes = total;
-	return XSDK_AVATAR_OK;
+	result = XSDK_AVATAR_OK;
+done:
+	free(json.data);
+	free_gltf(&g);
+	return result;
 }
 
 static int export_described(const XsdkAvatarDescription *d, void **glb, uint32_t *size_bytes)
