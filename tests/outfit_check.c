@@ -8,6 +8,8 @@
 // The outfit load and the rig export with their 1st, 2nd, ... allocation failing, as tests/alloc_check does for the
 // asset layer: each must return XSDK_AVATAR_ERROR_MEMORY with nothing left over (build/pc/outfit_alloc_check, the
 // same test built with AddressSanitizer, runs it).
+//   outfit_check <FFFE07DF00000002> stock | hat
+// A stock avatar with face features; or a stock hair with and without a hat, swapped for its hat variant under one.
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -160,9 +162,42 @@ static int check_stock(XsdkAvatarDescription *d, AvatarOutfit *outfit)
 	return failures ? 1 : 0;
 }
 
+// The hair a stock avatar ends up with, by name; "" if none.
+static const char *hair_of(XsdkAvatarDescription *d, AvatarOutfit *outfit, const XsdkAvatarStockPart *parts,
+	uint32_t count, int *result)
+{
+	static char label[48];
+	label[0] = 0;
+	*result = avatar_outfit_describe_stock(d, parts, count);
+	if (*result == XSDK_AVATAR_OK)
+		*result = avatar_outfit_load(outfit, d);
+	for (uint32_t p = 0; p < outfit->part_count; p++)
+		if (outfit->parts[p].slots & XSDK_AVATAR_SLOT_HAIR)
+			snprintf(label, sizeof label, "%s", outfit->parts[p].label);
+	avatar_outfit_free(outfit);
+	return label;
+}
+
+// Hair under a hat (SPECS.md, section 3.7; test run 9): with a hat on, the hair is its hat variant, which the pack
+// record links to ("Raised Front" -> "Quiff (Hat)"); without one, the hair itself.
+static int check_hat(XsdkAvatarDescription *d, AvatarOutfit *outfit)
+{
+	XsdkAvatarStockPart parts[] = { { "MaleBody", 0xFFC68642 }, { "Head", 0xFFC68642 },
+		{ "Raised Front", 0xFF2A1B10 }, { "Male Baseball Cap", 0xFF3A4E7A } };
+	int failures = 0, result;
+	const char *bare = hair_of(d, outfit, parts, 3, &result);
+	printf("hat: without one: %d, %s\n", result, bare);
+	failures += result != XSDK_AVATAR_OK || strcmp(bare, "Raised Front") != 0;
+	const char *capped = hair_of(d, outfit, parts, 4, &result);
+	printf("hat: under a Male Baseball Cap: %d, %s\n", result, capped);
+	failures += result != XSDK_AVATAR_OK || strcmp(capped, "Quiff (Hat)") != 0;
+	printf(failures ? "hat: FAIL\n" : "hat: all passed\n");
+	return failures ? 1 : 0;
+}
+
 // The rig export (src/avatar_export.c) as the console runs it: male or female (a bare body and head), stock (the
-// avatar of check_stock), or a description with the folders' item packages. Writes the .glb; the file holds the
-// console's meshes, keep it off the repository.
+// avatar of check_stock), hat (a cap over a stock hair), or a description with the folders' item packages. Writes
+// the .glb; the file holds the console's meshes, keep it off the repository.
 static int export_rig(const char *out, const char *what)
 {
 	static const XsdkAvatarStockPart male[] = { { "MaleBody", 0xFFC68642 }, { "Head", 0xFFC68642 } };
@@ -170,6 +205,9 @@ static int export_rig(const char *out, const char *what)
 	static const XsdkAvatarStockPart stock[] = { { "MaleBody", 0xFFC68642 }, { "Head", 0xFFC68642 },
 		{ "Buzz Cut", 0xFF2A1B10 }, { "Male Punk Tee", 0xFF303030 }, { "Jeans", 0xFF3A4E7A },
 		{ "High Top Sneakers", 0xFF202020 } };
+	// Hair under a hat: the cap over "Raised Front", which becomes "Quiff (Hat)".
+	static const XsdkAvatarStockPart hat[] = { { "MaleBody", 0xFFC68642 }, { "Head", 0xFFC68642 },
+		{ "Raised Front", 0xFF2A1B10 }, { "Male Baseball Cap", 0xFF3A4E7A } };
 	void *glb = NULL;
 	uint32_t size = 0;
 	int result;
@@ -179,6 +217,8 @@ static int export_rig(const char *out, const char *what)
 		result = xsdk_avatar_export_stock(female, 2, &glb, &size);
 	else if (strcmp(what, "stock") == 0)
 		result = xsdk_avatar_export_stock(stock, sizeof stock / sizeof stock[0], &glb, &size);
+	else if (strcmp(what, "hat") == 0)
+		result = xsdk_avatar_export_stock(hat, sizeof hat / sizeof hat[0], &glb, &size);
 	else {
 		static uint8_t bytes[XSDK_AVATAR_DESCRIPTION_BYTES];
 		FILE *file = fopen(what, "rb");
@@ -253,8 +293,8 @@ int main(int argc, char **argv)
 {
 	if (argc < 3 || (strcmp(argv[2], "export") == 0 && argc < 5) || (strcmp(argv[2], "alloc") == 0 && argc < 4)) {
 		fprintf(stderr, "usage: outfit_check <FFFE07DF00000002> <description> [<package folder> ...]\n"
-						"       outfit_check <FFFE07DF00000002> stock\n"
-						"       outfit_check <FFFE07DF00000002> export <out.glb> male|female|stock|<description> "
+						"       outfit_check <FFFE07DF00000002> stock|hat\n"
+						"       outfit_check <FFFE07DF00000002> export <out.glb> male|female|stock|hat|<description> "
 						"[<package folder> ...]\n"
 						"       outfit_check <FFFE07DF00000002> alloc <description> [<package folder> ...]\n");
 		return 2;
@@ -275,6 +315,8 @@ int main(int argc, char **argv)
 	static AvatarOutfit outfit;
 	if (strcmp(argv[2], "stock") == 0)
 		return check_stock(&d, &outfit);
+	if (strcmp(argv[2], "hat") == 0)
+		return check_hat(&d, &outfit);
 	static uint8_t bytes[XSDK_AVATAR_DESCRIPTION_BYTES];
 	FILE *file = fopen(description, "rb");
 	if (!file || fread(bytes, 1, sizeof bytes, file) != sizeof bytes)

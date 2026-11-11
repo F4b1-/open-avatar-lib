@@ -331,6 +331,7 @@ static int add_stand_ins(AvatarOutfit *outfit, uint32_t empty, const XsdkAvatarD
 		if (!part)
 			continue;
 		const uint32_t colors[3] = { in->argb[g], in->argb[g], in->argb[g] };
+		part->slots = in->slot;
 		set_colors(part, in->slot, colors, d);
 		xsdk_log_write("avatar: stand-in %s", in->names[g]);
 	}
@@ -398,12 +399,69 @@ static int load_items(AvatarOutfit *outfit, const XsdkAvatarDescription *d, uint
 			return result;
 		if (!part)
 			continue;
+		part->slots = item->slots;
 		set_colors(part, item->slots, item->colors, d);
 		if (item->slots & XSDK_AVATAR_SLOT_HEAD) {
 			result = fill_head(part, d);
 			if (result != XSDK_AVATAR_OK)
 				return result;
 		}
+	}
+	return XSDK_AVATAR_OK;
+}
+
+// Whether a part fills the hat slot (a hat, or a costume's headgear).
+static bool wears_hat(const AvatarOutfit *outfit)
+{
+	for (uint32_t p = 0; p < outfit->part_count; p++)
+		if (outfit->parts[p].slots & XSDK_AVATAR_SLOT_HAT)
+			return true;
+	return false;
+}
+
+// The stock record a hair's record links to: its variant made to sit under a hat (SPECS.md, section 3.7: "Raised
+// Front" links to "Quiff (Hat)"). NO_RECORD if it links to none, or to something that isn't hair.
+static uint32_t hat_variant(const AvatarPart *hair)
+{
+	uint8_t id[XSDK_AVATAR_ID_BYTES];
+	uint32_t record;
+	if (hair->record == NO_RECORD || !xsdk_avatar_pack_link(pack, hair->record, id) ||
+		!xsdk_avatar_id_is_stock(id, &record) || id_mask(id) != XSDK_AVATAR_SLOT_HAIR)
+		return NO_RECORD;
+	return record;
+}
+
+// Under a hat, each stock hair swapped for its hat variant, which stays under the hat; the full hair pokes out
+// through it (test run 9). The variant takes the hair's colours. A variant that doesn't load leaves the hair as it is.
+static int hair_under_hat(AvatarOutfit *outfit)
+{
+	if (!wears_hat(outfit))
+		return XSDK_AVATAR_OK;
+	for (uint32_t p = 0; p < outfit->part_count; p++) {
+		AvatarPart *hair = &outfit->parts[p];
+		const uint32_t record = (hair->slots & XSDK_AVATAR_SLOT_HAIR) ? hat_variant(hair) : NO_RECORD;
+		if (record == NO_RECORD)
+			continue;
+		void *strb;
+		uint32_t size;
+		int result = avatar_content_read_stock(record, &strb, &size);
+		if (result != XSDK_AVATAR_OK)
+			return unless_stopping(result);
+		XsdkAvatarModel model;
+		result = xsdk_avatar_model_decode(&model, strb, size);
+		free(strb);
+		if (result != XSDK_AVATAR_OK || model.mesh_count == 0) {
+			xsdk_log_write("avatar: %s under a hat: %s doesn't load (%d)", hair->label,
+				xsdk_avatar_pack_name(pack, record), result);
+			if (result == XSDK_AVATAR_OK)
+				xsdk_avatar_model_free(&model);
+			return unless_stopping(result);
+		}
+		xsdk_log_write("avatar: %s under a hat: %s", hair->label, xsdk_avatar_pack_name(pack, record));
+		xsdk_avatar_model_free(&hair->model);
+		hair->model = model;
+		hair->record = record;
+		snprintf(hair->label, sizeof hair->label, "%s", xsdk_avatar_pack_name(pack, record));
 	}
 	return XSDK_AVATAR_OK;
 }
@@ -419,6 +477,8 @@ int avatar_outfit_load(AvatarOutfit *outfit, const XsdkAvatarDescription *d)
 	result = load_items(outfit, d, &wanted, &filled);
 	if (result == XSDK_AVATAR_OK)
 		result = add_stand_ins(outfit, wanted & ~filled, d);
+	if (result == XSDK_AVATAR_OK)
+		result = hair_under_hat(outfit);
 	if (result != XSDK_AVATAR_OK) {
 		avatar_outfit_free(outfit); // only running out of memory gets here: no avatar with parts missing
 		return result;

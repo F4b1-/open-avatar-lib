@@ -39,6 +39,7 @@ typedef struct {
 	XsdkAvatarModel model;
 	// The stock record it came from (MaleBody 0, FemaleBody 1, Head 2, ...), or UINT32_MAX for an item package.
 	uint32_t record;
+	uint32_t slots; // the slots the description's item fills (XSDK_AVATAR_SLOT_*)
 	// What it changes on another part: triangles to hide and vertices to move (SPECS.md, section 3.7).
 	XsdkAvatarShape shape;
 	// False when it has neither custom colours nor a colour table: its mask is left out (SPECS.md, section 3.6).
