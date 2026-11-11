@@ -4,11 +4,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "avatar_internal.h"
 #include "avatar_runtime.h"
 #include "xsdk/log.h"
 
 // The face features' component masks, in the Head's slot order (SPECS.md, section 3.5).
-static const uint32_t layer_masks[AVATAR_HEAD_LAYERS] = { 0x20000, 0x10000, 0x4000, 0x2000, 0x8000, 0x40000 };
+static const uint32_t layer_masks[AVATAR_HEAD_LAYERS] = { XSDK_AVATAR_SLOT_SKIN_FEATURES,
+	XSDK_AVATAR_SLOT_FACIAL_HAIR, XSDK_AVATAR_SLOT_EYEBROWS, XSDK_AVATAR_SLOT_EYES, XSDK_AVATAR_SLOT_MOUTH,
+	XSDK_AVATAR_SLOT_EYE_SHADOW };
 
 // Per slot, the description colours its red, green and blue stand for (SPECS.md, section 3.6).
 enum { WHITE = XSDK_AVATAR_COLORS, BLACK };
@@ -46,27 +49,35 @@ enum {
 		XSDK_AVATAR_SLOT_HAIR | XSDK_AVATAR_SLOT_SHIRT | XSDK_AVATAR_SLOT_TROUSERS | XSDK_AVATAR_SLOT_SHOES,
 	BODY_MALE = 0, // the bodies' pack records (SPECS.md, section 4.1)
 	BODY_FEMALE = 1,
+	ITEM_SLOTS = 0xFFFF, // the part of a component mask a description's item keeps (avatar.h)
+	NO_RECORD = UINT32_MAX, // a part from an item package, not the pack
+	SKIN_SLOTS = XSDK_AVATAR_SLOT_HEAD | XSDK_AVATAR_SLOT_BODY,
 };
 
-// The face features' component masks (SPECS.md, sections 3.5 and 4.6): eyes, eyebrows, mouth, facial hair, skin features,
-// eye shadow, nose, chin, ears; and the description colour each one's own colour sets.
-enum { FACE_FEATURES = 0x003FE000 };
+// The face features (SPECS.md, sections 3.5 and 4.6), and the description colour each one's own colour sets.
+enum {
+	FACE_FEATURES = XSDK_AVATAR_SLOT_EYES | XSDK_AVATAR_SLOT_EYEBROWS | XSDK_AVATAR_SLOT_MOUTH |
+		XSDK_AVATAR_SLOT_FACIAL_HAIR | XSDK_AVATAR_SLOT_SKIN_FEATURES | XSDK_AVATAR_SLOT_EYE_SHADOW |
+		XSDK_AVATAR_SLOT_NOSE | XSDK_AVATAR_SLOT_CHIN | XSDK_AVATAR_SLOT_EARS,
+};
 static const uint32_t feature_colors[][2] = {
-	{ 0x2000, XSDK_AVATAR_COLOR_EYES },
-	{ 0x4000, XSDK_AVATAR_COLOR_EYEBROWS },
-	{ 0x8000, XSDK_AVATAR_COLOR_MOUTH },
-	{ 0x10000, XSDK_AVATAR_COLOR_FACIAL_HAIR },
-	{ 0x40000, XSDK_AVATAR_COLOR_EYE_SHADOW },
+	{ XSDK_AVATAR_SLOT_EYES, XSDK_AVATAR_COLOR_EYES },
+	{ XSDK_AVATAR_SLOT_EYEBROWS, XSDK_AVATAR_COLOR_EYEBROWS },
+	{ XSDK_AVATAR_SLOT_MOUTH, XSDK_AVATAR_COLOR_MOUTH },
+	{ XSDK_AVATAR_SLOT_FACIAL_HAIR, XSDK_AVATAR_COLOR_FACIAL_HAIR },
+	{ XSDK_AVATAR_SLOT_EYE_SHADOW, XSDK_AVATAR_COLOR_EYE_SHADOW },
 };
 
 static const XsdkAvatarPack *pack;
 
+// An ARGB colour's red, green and blue, 0-1.
 static void argb_to_rgb(uint32_t argb, float *rgb)
 {
 	for (uint32_t k = 0; k < 3; k++)
-		rgb[k] = (float)((argb >> (16 - 8 * k)) & 0xFF) / 255.0f;
+		rgb[k] = (float)avatar_bits(argb, 16 - 8 * k, 8) / 255.0f;
 }
 
+// A description colour (index into colors), or WHITE or BLACK, as red, green and blue.
 static void to_rgb(uint32_t index, const uint32_t *colors, float *rgb)
 {
 	if (index == WHITE || index == BLACK) {
@@ -76,9 +87,10 @@ static void to_rgb(uint32_t index, const uint32_t *colors, float *rgb)
 	argb_to_rgb(colors[index], rgb);
 }
 
+// A stock id's component mask: its first four bytes, big-endian (SPECS.md, section 4.6).
 static uint32_t id_mask(const uint8_t *id)
 {
-	return (uint32_t)id[0] << 24 | (uint32_t)id[1] << 16 | (uint32_t)id[2] << 8 | id[3];
+	return avatar_be32(id);
 }
 
 // Whether a part's failure stops the whole load. Running out of memory does: the avatar would come out with parts
@@ -114,7 +126,37 @@ static int load_template(AvatarPart *part)
 	return unless_stopping(result);
 }
 
-// Decodes an STRB file (freeing it) into the outfit's next part: a stock record, or UINT32_MAX for an item package.
+// A part's model and shape: the model, and a package's own shape block (or none: not an error); a stock part's shape
+// comes from the template its record links to. Only a failure that stops the load is returned for the shape.
+static int decode_part(AvatarPart *part, const void *strb, uint32_t size)
+{
+	int result = xsdk_avatar_model_decode(&part->model, strb, size);
+	if (result == XSDK_AVATAR_OK && part->record == NO_RECORD) {
+		const int shape = xsdk_avatar_shape_decode(&part->shape, strb, size);
+		if (stops_load(shape))
+			result = shape;
+	}
+	return result;
+}
+
+static void free_part(AvatarPart *part)
+{
+	xsdk_avatar_model_free(&part->model);
+	xsdk_avatar_shape_free(&part->shape);
+}
+
+// The outfit's top: the highest vertex of any part, so far.
+static void raise_top(AvatarOutfit *outfit, const XsdkAvatarModel *model)
+{
+	for (uint32_t m = 0; m < model->mesh_count; m++) {
+		const XsdkAvatarMesh *mesh = &model->meshes[m];
+		for (uint32_t i = 0; i < mesh->vertex_count; i++)
+			if (mesh->positions[3 * i + 1] > outfit->top)
+				outfit->top = mesh->positions[3 * i + 1];
+	}
+}
+
+// Decodes an STRB file (freeing it) into the outfit's next part: a stock record, or NO_RECORD for an item package.
 // *out gets the part, or NULL for a model with no meshes (Bald) or one that doesn't decode.
 static int add_part(
 	AvatarOutfit *outfit, void *strb, uint32_t size, const char *label, uint32_t record, AvatarPart **out)
@@ -127,42 +169,26 @@ static int add_part(
 	}
 	AvatarPart *part = &outfit->parts[outfit->part_count];
 	memset(part, 0, sizeof *part);
-	int result = xsdk_avatar_model_decode(&part->model, strb, size);
 	part->record = record;
 	part->tinted = true;
-	// A package carries its own shape block (or none: not an error); a stock part links to a template in the pack.
-	if (result == XSDK_AVATAR_OK && record == UINT32_MAX) {
-		const int shape = xsdk_avatar_shape_decode(&part->shape, strb, size);
-		if (stops_load(shape))
-			result = shape;
-	}
+	int result = decode_part(part, strb, size);
 	free(strb);
 	if (result != XSDK_AVATAR_OK || part->model.mesh_count == 0) {
 		if (result != XSDK_AVATAR_OK)
 			xsdk_log_write("avatar: %s: no model (%d)", label, result);
-		xsdk_avatar_model_free(&part->model);
-		xsdk_avatar_shape_free(&part->shape);
+		free_part(part);
 		return unless_stopping(result);
 	}
 	snprintf(part->label, sizeof part->label, "%s", label);
-	if (record != UINT32_MAX) {
-		result = load_template(part);
-		if (result != XSDK_AVATAR_OK) {
-			xsdk_avatar_model_free(&part->model);
-			xsdk_avatar_shape_free(&part->shape);
-			return result;
-		}
+	if (record != NO_RECORD && (result = load_template(part)) != XSDK_AVATAR_OK) {
+		free_part(part);
+		return result;
 	}
 	if (part->shape.hidden_count || part->shape.override_count)
 		xsdk_log_write("avatar: %s hides %u triangles and moves %u vertices of record %u", label,
 			(unsigned)part->shape.hidden_count, (unsigned)part->shape.override_count,
 			(unsigned)part->shape.target_record);
-	for (uint32_t m = 0; m < part->model.mesh_count; m++) {
-		const XsdkAvatarMesh *mesh = &part->model.meshes[m];
-		for (uint32_t i = 0; i < mesh->vertex_count; i++)
-			if (mesh->positions[3 * i + 1] > outfit->top)
-				outfit->top = mesh->positions[3 * i + 1];
-	}
+	raise_top(outfit, &part->model);
 	outfit->part_count++;
 	*out = part;
 	return XSDK_AVATAR_OK;
@@ -209,6 +235,30 @@ static void apply_shapes(AvatarOutfit *outfit)
 	}
 }
 
+// A face feature that is a texture layer: the Head's slot s filled from the record's texture.
+static int load_face_layer(AvatarPart *head, uint32_t s, uint32_t record)
+{
+	uint32_t size;
+	void *strb;
+	int result = avatar_content_read_stock(record, &strb, &size);
+	if (result != XSDK_AVATAR_OK)
+		return unless_stopping(result);
+	result = xsdk_avatar_texture_decode(&head->layers[s], strb, size);
+	free(strb);
+	if (result != XSDK_AVATAR_OK)
+		xsdk_log_write("avatar: face layer %s: %d", xsdk_avatar_pack_name(pack, record), result);
+	return unless_stopping(result);
+}
+
+// The Head's slot for a face feature's mask; AVATAR_HEAD_LAYERS for a feature that is a shape (nose, chin, ears).
+static uint32_t layer_slot(uint32_t mask)
+{
+	uint32_t s = 0;
+	while (s < AVATAR_HEAD_LAYERS && layer_masks[s] != mask)
+		s++;
+	return s;
+}
+
 // The Head's layers filled from the description's face features, and every layer's colours.
 static int fill_head(AvatarPart *head, const XsdkAvatarDescription *d)
 {
@@ -221,31 +271,11 @@ static int fill_head(AvatarPart *head, const XsdkAvatarDescription *d)
 		uint32_t record;
 		if (!xsdk_avatar_id_is_stock(d->features[f], &record))
 			continue;
-		uint32_t s = 0;
-		while (s < AVATAR_HEAD_LAYERS && layer_masks[s] != id_mask(d->features[f]))
-			s++;
-		int result;
-		if (s == AVATAR_HEAD_LAYERS) {
-			result = apply_face_shape(head, record);
-			if (result != XSDK_AVATAR_OK)
-				return result;
-			continue;
-		}
-		uint32_t size;
-		void *strb;
-		result = avatar_content_read_stock(record, &strb, &size);
-		if (result != XSDK_AVATAR_OK) {
-			if (stops_load(result))
-				return result;
-			continue;
-		}
-		result = xsdk_avatar_texture_decode(&head->layers[s], strb, size);
-		free(strb);
-		if (result != XSDK_AVATAR_OK) {
-			xsdk_log_write("avatar: face layer %s: %d", xsdk_avatar_pack_name(pack, record), result);
-			if (stops_load(result))
-				return result;
-		}
+		const uint32_t s = layer_slot(id_mask(d->features[f]));
+		const int result =
+			s == AVATAR_HEAD_LAYERS ? apply_face_shape(head, record) : load_face_layer(head, s, record);
+		if (result != XSDK_AVATAR_OK)
+			return result;
 	}
 	return XSDK_AVATAR_OK;
 }
@@ -255,15 +285,15 @@ static int fill_head(AvatarPart *head, const XsdkAvatarDescription *d)
 static void set_colors(AvatarPart *part, uint32_t slots, const uint32_t *item_colors, const XsdkAvatarDescription *d)
 {
 	for (uint32_t c = 0; c < 3; c++) {
-		if (slots & (XSDK_AVATAR_SLOT_HEAD | XSDK_AVATAR_SLOT_BODY))
+		if (slots & SKIN_SLOTS)
 			to_rgb(XSDK_AVATAR_COLOR_SKIN, d->colors, part->colors[c]);
 		else if (slots & XSDK_AVATAR_SLOT_HAIR)
 			to_rgb(XSDK_AVATAR_COLOR_HAIR, d->colors, part->colors[c]);
 		else
 			argb_to_rgb(item_colors[c], part->colors[c]);
 	}
-	const bool given = (item_colors[0] | item_colors[1] | item_colors[2]) >> 24 != 0;
-	if (given || (slots & (XSDK_AVATAR_SLOT_HEAD | XSDK_AVATAR_SLOT_BODY | XSDK_AVATAR_SLOT_HAIR)))
+	const bool given = avatar_bits(item_colors[0] | item_colors[1] | item_colors[2], 24, 8) != 0; // any alpha
+	if (given || (slots & (SKIN_SLOTS | XSDK_AVATAR_SLOT_HAIR)))
 		return;
 	if (part->model.color_entry_count)
 		for (uint32_t c = 0; c < 3; c++)
@@ -323,6 +353,20 @@ static void build_skeleton(AvatarOutfit *outfit)
 	xsdk_log_write("avatar: no body, no skeleton: drawn in the bind pose");
 }
 
+// An item's STRB file, from the pack or its package: *record its pack record (NO_RECORD for a package), label its
+// name or package file name.
+static int read_item(const XsdkAvatarItem *item, uint32_t *record, char label[33], void **strb, uint32_t *size)
+{
+	if (xsdk_avatar_id_is_stock(item->id, record)) {
+		snprintf(label, 33, "%s", xsdk_avatar_pack_name(pack, *record));
+		return avatar_content_read_stock(*record, strb, size);
+	}
+	*record = NO_RECORD;
+	uint32_t title;
+	xsdk_avatar_id_package_name(item->id, label, &title);
+	return avatar_content_read_item(item->id, strb, size);
+}
+
 // Loads the description's items into the outfit, each as a part; *wanted gets the slots of items the console
 // lacks that a stand-in can fill, *filled those an item filled.
 static int load_items(AvatarOutfit *outfit, const XsdkAvatarDescription *d, uint32_t *wanted, uint32_t *filled)
@@ -336,16 +380,7 @@ static int load_items(AvatarOutfit *outfit, const XsdkAvatarDescription *d, uint
 		uint32_t record, size;
 		char label[33];
 		void *strb;
-		int result;
-		if (xsdk_avatar_id_is_stock(item->id, &record)) {
-			snprintf(label, sizeof label, "%s", xsdk_avatar_pack_name(pack, record));
-			result = avatar_content_read_stock(record, &strb, &size);
-		} else {
-			record = UINT32_MAX; // an item package: it carries its own shape block
-			uint32_t title;
-			xsdk_avatar_id_package_name(item->id, label, &title);
-			result = avatar_content_read_item(item->id, &strb, &size);
-		}
+		int result = read_item(item, &record, label, &strb, &size);
 		if (stops_load(result))
 			return result;
 		if (result != XSDK_AVATAR_OK) {
@@ -393,6 +428,35 @@ int avatar_outfit_load(AvatarOutfit *outfit, const XsdkAvatarDescription *d)
 	return outfit->part_count ? XSDK_AVATAR_OK : XSDK_AVATAR_ERROR_NOT_FOUND;
 }
 
+// A stock face feature into the description (SPECS.md, sections 3.5, 4.6), its colour into the colour it sets.
+static int describe_feature(XsdkAvatarDescription *d, uint32_t record, uint32_t mask, uint32_t argb)
+{
+	if (d->feature_count == XSDK_AVATAR_FEATURES)
+		return XSDK_AVATAR_ERROR_FORMAT;
+	xsdk_avatar_pack_stock_id(pack, record, d->features[d->feature_count++]);
+	for (size_t c = 0; c < sizeof feature_colors / sizeof feature_colors[0]; c++)
+		if (mask == feature_colors[c][0])
+			d->colors[feature_colors[c][1]] = argb;
+	return XSDK_AVATAR_OK;
+}
+
+// A stock item into the description, its colour as the skin (head, body), the hair colour or its own three.
+static int describe_item(XsdkAvatarDescription *d, uint32_t record, uint32_t mask, uint32_t argb)
+{
+	if (d->item_count == XSDK_AVATAR_ITEMS)
+		return XSDK_AVATAR_ERROR_FORMAT;
+	XsdkAvatarItem *item = &d->items[d->item_count++];
+	xsdk_avatar_pack_stock_id(pack, record, item->id);
+	item->slots = mask & ITEM_SLOTS;
+	if (mask & SKIN_SLOTS)
+		d->colors[XSDK_AVATAR_COLOR_SKIN] = argb;
+	else if (mask & XSDK_AVATAR_SLOT_HAIR)
+		d->colors[XSDK_AVATAR_COLOR_HAIR] = argb;
+	else
+		item->colors[0] = item->colors[1] = item->colors[2] = argb;
+	return XSDK_AVATAR_OK;
+}
+
 int avatar_outfit_describe_stock(XsdkAvatarDescription *d, const XsdkAvatarStockPart *parts, uint32_t count)
 {
 	memset(d, 0, sizeof *d);
@@ -400,46 +464,28 @@ int avatar_outfit_describe_stock(XsdkAvatarDescription *d, const XsdkAvatarStock
 	if (result != XSDK_AVATAR_OK)
 		return result;
 	memcpy(d->colors, stock_colors, sizeof d->colors);
-	for (uint32_t p = 0; p < count; p++) {
+	for (uint32_t p = 0; p < count && result == XSDK_AVATAR_OK; p++) {
 		uint32_t record;
 		if (xsdk_avatar_pack_find(pack, parts[p].name, &record) != XSDK_AVATAR_OK) {
 			xsdk_log_write("avatar: no stock part named %s", parts[p].name);
 			return XSDK_AVATAR_ERROR_NOT_FOUND;
 		}
 		const uint32_t mask = xsdk_avatar_pack_mask(pack, record);
-		if (mask & FACE_FEATURES) {
-			// A face feature: eyes, eyebrows, mouth, facial hair, a nose, chin or ears (SPECS.md, sections 3.5, 4.6).
-			if (d->feature_count == XSDK_AVATAR_FEATURES)
-				return XSDK_AVATAR_ERROR_FORMAT;
-			xsdk_avatar_pack_stock_id(pack, record, d->features[d->feature_count++]);
-			for (size_t c = 0; c < sizeof feature_colors / sizeof feature_colors[0]; c++)
-				if (mask == feature_colors[c][0])
-					d->colors[feature_colors[c][1]] = parts[p].argb;
-			continue;
-		}
-		if (d->item_count == XSDK_AVATAR_ITEMS)
-			return XSDK_AVATAR_ERROR_FORMAT;
-		XsdkAvatarItem *item = &d->items[d->item_count++];
-		xsdk_avatar_pack_stock_id(pack, record, item->id);
-		item->slots = mask & 0xFFFF;
-		if (mask & (XSDK_AVATAR_SLOT_HEAD | XSDK_AVATAR_SLOT_BODY))
-			d->colors[XSDK_AVATAR_COLOR_SKIN] = parts[p].argb;
-		else if (mask & XSDK_AVATAR_SLOT_HAIR)
-			d->colors[XSDK_AVATAR_COLOR_HAIR] = parts[p].argb;
-		else
-			item->colors[0] = item->colors[1] = item->colors[2] = parts[p].argb;
+		result = mask & FACE_FEATURES ? describe_feature(d, record, mask, parts[p].argb)
+									  : describe_item(d, record, mask, parts[p].argb);
 	}
-	return XSDK_AVATAR_OK;
+	return result;
 }
 
 void avatar_outfit_hidden(const AvatarOutfit *outfit, const AvatarPart *part, uint8_t *hidden, uint32_t triangles)
 {
 	memset(hidden, 0, triangles);
-	if (part->record == UINT32_MAX)
+	if (part->record == NO_RECORD)
 		return;
 	for (uint32_t q = 0; q < outfit->part_count; q++) {
 		const XsdkAvatarShape *shape = &outfit->parts[q].shape;
-		if (shape->target_record != part->record || shape->target_index_bytes != triangles * 6)
+		// A shape is made for its target's model as it was: 3 indices of 2 bytes a triangle.
+		if (shape->target_record != part->record || shape->target_index_bytes != triangles * 3 * sizeof(uint16_t))
 			continue;
 		for (uint32_t k = 0; k < shape->hidden_count; k++)
 			if (shape->hidden[k] < triangles)

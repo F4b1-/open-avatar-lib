@@ -138,6 +138,17 @@ enum {
 	XSDK_AVATAR_SLOT_EARRINGS = 0x400,
 	XSDK_AVATAR_SLOT_RING = 0x800,
 	XSDK_AVATAR_SLOT_PROP = 0x1000,           // carried props: left out (SPECS.md, section 6.1)
+	// Face features, pack records only (SPECS.md, sections 3.5 and 4.6): the first six fill the Head's texture
+	// layers, the last three are shapes that move its vertices.
+	XSDK_AVATAR_SLOT_EYES = 0x2000,
+	XSDK_AVATAR_SLOT_EYEBROWS = 0x4000,
+	XSDK_AVATAR_SLOT_MOUTH = 0x8000,
+	XSDK_AVATAR_SLOT_FACIAL_HAIR = 0x10000,
+	XSDK_AVATAR_SLOT_SKIN_FEATURES = 0x20000, // face paint, rosy cheeks, ...
+	XSDK_AVATAR_SLOT_EYE_SHADOW = 0x40000,
+	XSDK_AVATAR_SLOT_NOSE = 0x80000,
+	XSDK_AVATAR_SLOT_CHIN = 0x100000,
+	XSDK_AVATAR_SLOT_EARS = 0x200000,
 	XSDK_AVATAR_SLOT_ANIMATION = 0x00400000,  // the stock animations, all 60 and nothing else
 	XSDK_AVATAR_SLOT_TEMPLATE = 0x01000000,   // body templates ("... Hiding Template")
 };
