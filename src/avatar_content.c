@@ -20,12 +20,20 @@ enum {
 };
 
 static const char pack_path[] = "\\SEP\\Content\\0000000000000000\\FFFE07DF\\00008000\\FFFE07DF00000002";
-// Where shared item packages are: the hard drive first (Avatar Thrift Store installs there), then USB; each under
-// <title id>\00009000\<package> (FORMATS.md, section 4: the avatar items' content type folder).
+// Where shared item packages are, each under <title id>\00009000\<package> (FORMATS.md, section 4: the avatar
+// items' content type folder), searched in this order, the first found taken: the hard drive (Avatar Thrift Store
+// installs there), the USB ports, the consoles' built-in memory units, then the memory unit slots. Every device is
+// in the \Device listing of probe_pack.log (EVIDENCE.md, "Device listing"); that each keeps Content at its root is
+// inferred from the hard drive and USB. A device a console lacks fails to open and the search goes on.
 static const char *const item_folders[] = {
 	"\\Device\\Harddisk0\\Partition1\\Content\\0000000000000000",
 	"\\Device\\Mass0\\Content\\0000000000000000",
 	"\\Device\\Mass1\\Content\\0000000000000000",
+	"\\Device\\Mass2\\Content\\0000000000000000",            // the third USB port (Avatar Thrift Store's "USB 3")
+	"\\Device\\BuiltInMuUsb\\Storage\\Content\\0000000000000000", // 4 GB slims' flash; "Storage" not yet confirmed
+	"\\Device\\BuiltInMuSfc\\Content\\0000000000000000",     // 256 and 512 MB Arcades' NAND
+	"\\Device\\Mu0\\Content\\0000000000000000",              // memory unit slot A
+	"\\Device\\Mu1\\Content\\0000000000000000",              // and B
 };
 static const char item_content_type[] = "00009000";
 static const char item_asset_file[] = "asset_v2.bin"; // an item package's STRB file (FORMATS.md, section 3)

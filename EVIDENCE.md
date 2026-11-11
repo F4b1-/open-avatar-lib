@@ -16,6 +16,7 @@ the same files can check the same facts.
 | **Pack** | The stock asset pack: package `FFFE07DF00000002` from the hard drive's system extended partition (`Content\0000000000000000\FFFE07DF\00008000\`), holding `AvatarAssetPack.toc` (version 2, 1282 records). The source of every stock asset, the skeleton, the 60 stock animations. Copied off the console by `tools/probe_pack`. | `9dcef5b4cc309eaf` (another console's pack of the same version may differ in its signature) |
 | **SysExt** | A copy of the console's system extended partition, 2026-11-03: the pack above and the files beside it (FORMATS.md 4.3). | the pack's hash |
 | **System** | A copy of the console's flash system partition, 2026-11-03: xam.xex, dash.xex and 34 other files; it holds no avatar assets (FORMATS.md 4.2). Not disassembled. | - |
+| **Device listing** | `tools/probe_pack`'s log of 2026-11-03 (`probe_pack.log`, beside the copied pack): the kernel's `\Device` and `\??` object directories as the console has them, each entry's type and link target: the storage devices the library searches for item packages (FORMATS.md 4). | - |
 
 ## Samples
 

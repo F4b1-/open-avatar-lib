@@ -288,6 +288,17 @@ prompted by the viewer's first textured run: skin showed through skinny jeans an
 All-Stars Avatar decodes the same model format from an `AvatarAssetPack` with an `AvatarAssetPack.toc` that ships
 inside a game, which suggests the system keeps its stock assets in the same kind of pack.
 
+**Where item packages can be** (2026-11-12): any storage device the console has, each with a `Content` folder at
+its root. The console's `\Device` object listing (probe_pack.log, EVIDENCE.md "Device listing") has the hard drive
+(`Harddisk0`, a directory of partitions; content on `Partition1`), the USB ports `Mass0`, `Mass1` and `Mass2`, the
+memory unit slots `Mu0` and `Mu1` (with `Mu0System`, `Mu1System`), the internal NAND memory unit of 256 and 512 MB
+Arcade consoles `BuiltInMuSfc` (with `BuiltInMuSfcSystem`), and `BuiltInMuUsb`, a directory like `Harddisk0`: the
+4 GB slims' internal flash, its content partition taken to be `Storage` (inferred, from an outside bug report; not
+yet seen on a console). Content at the hard drive's and USB devices' roots is established (Avatar Thrift Store
+installs items there); at the memory units' roots it is inferred. The library searches the shared folder
+(`0000000000000000`) of each, in the order of `item_folders` in avatar_content.c; items kept under a profile's
+own folder (`Content\<xuid>\`) are not searched yet.
+
 ### 4.1 The stock asset pack (`AvatarAssetPack.toc`)
 
 Source: All-Stars Avatar, `src/avatar/tools/nexia_pack_adapt.py` (MIT), for version 1 on that game's disc; version 2
