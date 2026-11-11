@@ -1,11 +1,11 @@
 # Open Avatar Lib
 
 `Open Avatar Lib` is an open-source C17 library for loading, animating, and rendering Xbox 360 Avatars in
-homebrew games and applications built on [xsdk](https://github.com/xenosworks/xsdk). It lets a title bring the
+homebrew games and applications built on and made to work alongside [xsdk](https://github.com/xenosworks/xsdk). It lets a title bring the
 signed-in player's own avatar—or custom NPCs—into a 3D scene in a few function calls, handling the console's
 avatar file formats, outfit assembly, facial expressions, skeletal animation, and Xenos GPU skinning behind the
-scenes. All meshes, textures, clothing items, and stock animations are read directly from the console at run time,
-so neither the library nor your game needs to bundle Microsoft assets.
+scenes. All meshes, textures, clothing items, and animations are read directly from the console at run time,
+so neither the library nor your game needs to bundle Microsoft assets. Animations can either be imported or created directly in code.
 
 New here? Start with [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) and `samples/hello_avatar_world`.
 
