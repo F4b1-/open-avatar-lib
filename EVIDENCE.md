@@ -53,7 +53,7 @@ looked at on the console and reported. Each new console run adds an entry here.
 | **Console run 2026-11-11a** | 2026-11-11 | the refactored library: the renderer, content and outfit code, the camera helpers, the store split | everything as before the refactoring |
 | **Test run 9** | 2026-11-11 | the store on P3 | "Raised Front" through the Santa hat: hair under a hat not swapped for its hat variant (FORMATS.md 3.7) |
 | **Console run 2026-11-11b** | 2026-11-11 | the store with hair under a hat swapped | the hat variant ("Quiff (Hat)") stays under the hat (FORMATS.md 3.7) |
-| **Test run 10** | 2026-11-11 | the store after milestone 12 (the library's locomotion, RB recording, GPU time) on P3 | locomotion loads (walk 0.877, run 1.957 m/s, jump); the hat variant again; RB records the avatars' draws (35,122 dwords a frame) and runs them in both bands; the whole frame 10.6-12.8 ms of GPU time and 1.1-1.3 ms of CPU at 2 samples with nine avatars |
+| **Test run 10** | 2026-11-11 | hello_avatar_world, and the store after milestone 12 (the library's locomotion, RB recording, GPU time), on P3 | hello_avatar_world walks, runs and jumps on its stage with its shadow; the store's locomotion loads (walk 0.877, run 1.957 m/s, jump); the hat variant again; RB records the avatars' draws (35,122 dwords a frame) and runs them in both bands, the avatars looking the same as drawn directly; the whole frame 10.6-12.8 ms of GPU time and 1.1-1.3 ms of CPU at 2 samples with nine avatars |
 
 ## Public sources
 
