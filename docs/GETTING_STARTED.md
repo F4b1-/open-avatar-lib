@@ -34,8 +34,8 @@ commit (`git checkout 01c7a43 && git submodule update`) and open an issue.
 ## 2. Build the library and the samples
 
 ```
-git clone https://github.com/F4b1-/open-avatar-lib xbox360_avatar_lib
-cd xbox360_avatar_lib
+git clone https://github.com/F4b1-/open-avatar-lib
+cd open-avatar-lib
 ./build.sh <path to xsdk>
 ```
 
@@ -74,7 +74,7 @@ title does. A CMake project for it, beside the library:
 cmake_minimum_required(VERSION 3.25)
 project(my_title C ASM)
 
-add_subdirectory(../xbox360_avatar_lib xsdk_avatar)   # the library, built with your xsdk
+add_subdirectory(../open-avatar-lib xsdk_avatar)   # the library, built with your xsdk
 
 add_executable(my_title main.c)
 target_compile_options(my_title PRIVATE -std=gnu17 -O2 -Wall -Wextra)

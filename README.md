@@ -1,13 +1,29 @@
 # Open Avatar Lib
 
 `Open Avatar Lib` is an open-source C17 library for loading, animating, and rendering Xbox 360 Avatars in
-homebrew games and applications built on and made to work alongside [xsdk](https://github.com/xenosworks/xsdk). It lets a title bring the
-signed-in player's own avatar — or any custom Avatar — into a 3D scene in a few function calls, handling the console's
-avatar file formats, outfit assembly, facial expressions, skeletal animation, and Xenos GPU skinning behind the
-scenes. All meshes, textures, clothing items, and animations are read directly from the console at run time,
-so neither the library nor your game needs to bundle Microsoft assets. Animations can either be imported or created directly in code.
+homebrew games and applications built on and made to work alongside [xsdk](https://github.com/xenosworks/xsdk). It
+lets a title bring the signed-in player's own avatar — or any custom Avatar — into a 3D scene in a few function
+calls, handling the console's avatar file formats, outfit assembly, facial expressions, skeletal animation, and
+Xenos GPU skinning behind the scenes. All meshes, textures, clothing items, and stock animations are read directly
+from the console at run time, so neither the library nor your game needs to bundle Microsoft assets. On top of the
+stock animations, the library ships its own walk, run and jump; animations of your own can be made in Blender and
+imported, or poses set bone by bone in code.
 
 Start with [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) and `samples/hello_avatar_world`.
+
+## Status: beta (v0.1.0)
+
+Everything below works on the console and is in daily use by the samples, but the API may still change before 1.0,
+and it has been tried on one console with a few profiles so far. Known limits:
+
+- Carried props (slot 0x1000: a guitar, a launcher) are left out; they bring skeletons and animations of their own.
+- Loading is synchronous: tens of milliseconds an avatar, on the calling thread.
+- The stock animations' facial keys aren't decoded: faces are set by the title (`xsdk_avatar_set_face`), and the
+  avatar blinks and talks on its own.
+- Items on memory units, a slim's 4 GB flash or under a profile's own content folder are searched for, but no such
+  item has been seen on a console yet ([docs/FORMATS.md](docs/FORMATS.md), section 4).
+
+Reports from other consoles, profiles and items are welcome: open an issue with the title's log.
 
 ## A first avatar
 
@@ -54,8 +70,10 @@ xsdk_avatar_set_face(avatar, &happy);
 xsdk_avatar_set_talking(avatar, level);
 
 // Load NPCs or fallbacks (missing marketplace items fall back to stock parts automatically):
-xsdk_avatar_load_description(&npc, description_1000_bytes);  // from probe_manifest or 360sona.com
-xsdk_avatar_load_stock(&fallback, part_names, part_count);   // from stock pack record names
+xsdk_avatar_load_description(&npc, description, 1000);      // 1000 bytes, from probe_manifest or 360sona.com
+const XsdkAvatarStockPart parts[] = { { "MaleBody", 0xFFDCAD8F }, { "Head", 0xFFDCAD8F },
+	{ "High and Tight", 0xFF4D331F } };                       // stock pack record names, each with its colour
+xsdk_avatar_load_stock(&fallback, parts, 3);
 ```
 
 ## The samples
@@ -71,9 +89,10 @@ xsdk_avatar_load_stock(&fallback, part_names, part_count);   // from stock pack 
 - **The avatar layer** (`XsdkAvatar`, console only): load, play, update, draw, close; faces, talking, the light,
   the shadow, and locomotion on top.
 - **The animation layer** (PC too): stock animations (`xsdk_avatar_stock_animation`), the animations state machine
-  (`XsdkAvatarPlayer`), the library's own walk, run and jump animations (`xsdk_avatar_animation_load_walk`, `_run`, `_jump`), the
-  locomotion that plays them (`xsdk_avatar_locomotion_*`). Additionally, you can sample poses yourself: blend or set bone by bone. Also includes the skeleton,
-  skin matrices; as well as the camera and placement helpers.
+  (`XsdkAvatarPlayer`), the library's own walk, run and jump animations (`xsdk_avatar_animation_load_walk`,
+  `_run`, `_jump`), the locomotion that plays them (`xsdk_avatar_locomotion_*`). Additionally, you can sample poses
+  yourself: blend or set bone by bone. Also includes the skeleton, skin matrices; as well as the camera and
+  placement helpers.
 - **The asset layer** (PC too): the stock pack, item packages, descriptions, models, textures, skeletons and
   animations as plain structs, decoded as [docs/FORMATS.md](docs/FORMATS.md) describes.
 
@@ -83,7 +102,7 @@ The library has no xsdk of its own: it builds with your title's xsdk, through CM
 In your title's `CMakeLists.txt`:
 
 ```cmake
-add_subdirectory(<path to xbox360_avatar_lib> xsdk_avatar)
+add_subdirectory(<path to open-avatar-lib> xsdk_avatar)
 target_link_libraries(<title> PRIVATE xsdk_avatar m)
 ```
 
@@ -118,8 +137,8 @@ In WSL, from this folder, naming an xsdk checkout:
 They run on your own console files, never on files in this repository:
 
 - `tools/probe_pack` copies the stock pack (`FFFE07DF00000002`) off a running console, where FTP cannot open `\SEP`.
-- `tools/probe_manifest` dumps each signed-in profile's 1000-byte avatar description (`manifest_<n>.bin`), for
-  `outfit_check` or for shipping as an NPC.
+- `tools/probe_manifest` dumps each signed-in profile's 1000-byte avatar description (`manifest_u<n>_avatar.bin`),
+  for `outfit_check` or for shipping as an NPC.
 
 `./build.sh pc` takes the compiler from `$CC` (gcc if unset). CI (`.github/workflows/ci.yml`) builds them all with GCC
 and Clang on every push and pull request, runs `player_check` and `camera_check` (the two that need no console files),

@@ -16,6 +16,12 @@ says where.
 
 ## Build and run
 
+In WSL, from the repository's top folder, naming your xsdk checkout:
+
+```
+tools/probe_pack/build.sh <xsdk checkout>
+```
+
 Copy `build/probe_pack/probe_pack.xex` to a folder on the console, launch it from Aurora, wait until it returns
 to the dashboard, then fetch `probe_pack.log` and any `FFFE07DF00000002` or `AvatarAssetPack.toc` beside it.
 Put the copied files in `references/`, never in the repository.

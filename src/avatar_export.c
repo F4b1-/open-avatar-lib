@@ -491,7 +491,7 @@ static bool write_json(Gltf *g, uint32_t ibm, Buffer *json)
 	if (gltf_failed(g) || joints.failed || pictures.failed)
 		goto done;
 	text(json,
-		"{\"asset\":{\"version\":\"2.0\",\"generator\":\"xsdk avatar library\"},"
+		"{\"asset\":{\"version\":\"2.0\",\"generator\":\"Open Avatar Lib\"},"
 		"\"scene\":0,\"scenes\":[{\"name\":\"Avatar\",\"nodes\":[%u]}],"
 		"\"nodes\":[%s],"
 		"\"skins\":[{\"name\":\"Avatar\",\"inverseBindMatrices\":%u,\"skeleton\":0,\"joints\":[%s]}],"
