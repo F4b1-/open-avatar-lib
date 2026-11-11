@@ -2,7 +2,8 @@
 # Builds the library and its samples with xsdk, or the PC tools, in WSL:
 #   ./build.sh <xsdk checkout>       build/console: libxsdk_avatar.a and the samples (hello_avatar_world, store,
 #                                    rig_export .xex), with that xsdk's toolchain
-#   ./build.sh pc <xsdk checkout>    build/pc: avatar_dump and the checks, with the host gcc (xsdk's headers only)
+#   ./build.sh pc <xsdk checkout>    build/pc: avatar_dump and the checks, with the host compiler ($CC, else gcc;
+#                                    xsdk's headers only)
 # The library has no xsdk of its own: a title builds it with its own xsdk (add_subdirectory under xsdk's toolchain
 # file), and building this repository on its own names a checkout. README.md names the xsdk commit last tested.
 set -euo pipefail
@@ -34,18 +35,19 @@ if $pc; then
 	# The avatar layer's loading half and the rig export, with xsdk's headers for their declarations and the console's
 	# file reads replaced by the test's.
 	outfit=("$root/src/avatar_outfit.c" "$root/src/avatar_export.c" "$root/src/avatar_bake.c" "$root/src/avatar_png.c")
+	cc="${CC:-gcc}"
 	mkdir -p "$root/build/pc/generated"
 	python3 "$root/tools/gen_clips.py" "$root/animations" > "$root/build/pc/generated/avatar_clips.h"
 	flags=(-std=c17 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" -I"$root/build/pc/generated")
 	for tool in avatar_dump player_check walk_check anim_check camera_check locomotion_check; do
-		gcc "${flags[@]}" "${sources[@]}" "$root/tests/$tool.c" -lm -o "$root/build/pc/$tool"
+		"$cc" "${flags[@]}" "${sources[@]}" "$root/tests/$tool.c" -lm -o "$root/build/pc/$tool"
 	done
-	gcc "${flags[@]}" -I"$xsdk/include" "${sources[@]}" "${outfit[@]}" "$root/tests/outfit_check.c" -lm \
+	"$cc" "${flags[@]}" -I"$xsdk/include" "${sources[@]}" "${outfit[@]}" "$root/tests/outfit_check.c" -lm \
 		-o "$root/build/pc/outfit_check"
 	# The out-of-memory tests, with AddressSanitizer: a leak or a double free in an error path ends them.
-	gcc "${flags[@]}" -g -fsanitize=address "${sources[@]}" "$root/tests/alloc_check.c" -lm \
+	"$cc" "${flags[@]}" -g -fsanitize=address "${sources[@]}" "$root/tests/alloc_check.c" -lm \
 		-o "$root/build/pc/alloc_check"
-	gcc "${flags[@]}" -g -fsanitize=address -I"$xsdk/include" "${sources[@]}" "${outfit[@]}" \
+	"$cc" "${flags[@]}" -g -fsanitize=address -I"$xsdk/include" "${sources[@]}" "${outfit[@]}" \
 		"$root/tests/outfit_check.c" -lm -o "$root/build/pc/outfit_alloc_check"
 	echo "Built $root/build/pc: avatar_dump, player_check, walk_check, anim_check, camera_check, locomotion_check," \
 		"outfit_check, alloc_check and outfit_alloc_check"

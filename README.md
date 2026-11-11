@@ -109,7 +109,10 @@ In WSL, from this folder, naming an xsdk checkout:
 ## Checks on the PC
 
 They run on your own console files (the stock pack, `FFFE07DF00000002`, copied off the console with
-`tools/probe_pack`; descriptions and item packages), never on files in this repository.
+`tools/probe_pack`; descriptions and item packages), never on files in this repository. `./build.sh pc` takes the
+compiler from `$CC` (gcc if unset). CI (`.github/workflows/ci.yml`) builds them all with GCC and Clang on every push
+and pull request, runs `player_check` and `camera_check` (the two that need no console files), and compiles the
+Python tools; the console build and the checks on console files stay local.
 
 - `player_check`: the player's cross-fades, queueing and timing, on made-up animations.
 - `camera_check`: the camera and placement helpers.

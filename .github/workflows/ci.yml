@@ -1,0 +1,52 @@
+# The PC build on every push and pull request: the asset and animation layers, the outfit and rig export code, and
+# every PC check, built with GCC and with Clang (each with -Werror, which catches code only one compiler accepts).
+# The checks that need no console files run: the player and the camera. The others read the console's own files
+# (the stock pack, descriptions, item packages), which are never in the repository, so here they are only built.
+# The console build needs xsdk's toolchain and isn't built here.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # The xsdk commit the library is last tested with (README.md); only its headers are used here.
+  XSDK_COMMIT: 01c7a43e588407c893ad794900bf29455a3aa303
+
+jobs:
+  pc:
+    name: PC (${{ matrix.cc }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out xsdk
+        uses: actions/checkout@v4
+        with:
+          repository: xenosworks/xsdk
+          ref: ${{ env.XSDK_COMMIT }}
+          path: xsdk
+      - name: Build
+        run: CC=${{ matrix.cc }} ./build.sh pc xsdk
+      - name: Checks without console files
+        run: |
+          build/pc/player_check
+          build/pc/camera_check
+
+  python:
+    name: Python tools
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile every script
+        # The converter, the generators, the Blender passes (Blender's own modules aren't imported at compile time)
+        # and the research prototypes: standard library only, so a syntax error is the thing to catch.
+        run: python3 -m py_compile tools/*.py research/*.py
