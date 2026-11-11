@@ -16,25 +16,32 @@ enum {
 	// XamUserGetSigninInfo's flags: 1 and 2 each ask for one of the two XUIDs (Avatar Thrift Store's
 	// app/kernel_extra.h); either does to learn whether the user is signed in.
 	SIGNIN_INFO_ONE_XUID = 1,
+	SIGNIN_INFO_OTHER_XUID = 2,
 	SIGNIN_STATE_SIGNED_OUT = 0,
+	USERS = 4,
+	OWNERS = 1 + USERS, // the shared folder, and each signed-in profile's
+	OWNER_CHARS = 16,   // a folder named after an XUID: 16 hex digits
+	OFFLINE_XUID_TOP = 0xE, // an offline XUID's top four bits
 };
 
 static const char pack_path[] = "\\SEP\\Content\\0000000000000000\\FFFE07DF\\00008000\\FFFE07DF00000002";
-// Where shared item packages are, each under <title id>\00009000\<package> (FORMATS.md, section 4: the avatar
-// items' content type folder), searched in this order, the first found taken: the hard drive (Avatar Thrift Store
-// installs there), the USB ports, the consoles' built-in memory units, then the memory unit slots. Every device is
-// in the \Device listing of probe_pack.log (EVIDENCE.md, "Device listing"); that each keeps Content at its root is
-// inferred from the hard drive and USB. A device a console lacks fails to open and the search goes on.
-static const char *const item_folders[] = {
-	"\\Device\\Harddisk0\\Partition1\\Content\\0000000000000000",
-	"\\Device\\Mass0\\Content\\0000000000000000",
-	"\\Device\\Mass1\\Content\\0000000000000000",
-	"\\Device\\Mass2\\Content\\0000000000000000",            // the third USB port (Avatar Thrift Store's "USB 3")
-	"\\Device\\BuiltInMuUsb\\Storage\\Content\\0000000000000000", // 4 GB slims' flash; "Storage" not yet confirmed
-	"\\Device\\BuiltInMuSfc\\Content\\0000000000000000",     // 256 and 512 MB Arcades' NAND
-	"\\Device\\Mu0\\Content\\0000000000000000",              // memory unit slot A
-	"\\Device\\Mu1\\Content\\0000000000000000",              // and B
+// Where item packages are (FORMATS.md, section 4): <device>\Content\<owner>\<title id>\00009000\<package>, the owner
+// the shared folder (all zeros) or a profile's own (its offline XUID). The devices in the order searched, the first
+// copy found taken: the hard drive (Avatar Thrift Store installs there), the USB ports, the consoles' built-in memory
+// units, then the memory unit slots. Every device is in the \Device listing of probe_pack.log (EVIDENCE.md, "Device
+// listing"); that each keeps Content at its root is inferred from the hard drive and USB. A device a console lacks
+// fails to open and the search goes on.
+static const char *const item_devices[] = {
+	"\\Device\\Harddisk0\\Partition1",
+	"\\Device\\Mass0",
+	"\\Device\\Mass1",
+	"\\Device\\Mass2",                 // the third USB port (Avatar Thrift Store's "USB 3")
+	"\\Device\\BuiltInMuUsb\\Storage", // 4 GB slims' flash; "Storage" not yet confirmed
+	"\\Device\\BuiltInMuSfc",          // 256 and 512 MB Arcades' NAND
+	"\\Device\\Mu0",                   // memory unit slot A
+	"\\Device\\Mu1",                   // and B
 };
+static const char shared_owner[] = "0000000000000000";
 static const char item_content_type[] = "00009000";
 static const char item_asset_file[] = "asset_v2.bin"; // an item package's STRB file (FORMATS.md, section 3)
 
@@ -139,28 +146,77 @@ int avatar_content_read_stock(uint32_t record, void **strb, uint32_t *size_bytes
 	return XSDK_AVATAR_OK;
 }
 
+// A signed-in user's offline XUID, the one their profile's folders are named after; 0 if no one is signed in there.
+// XamUserGetSigninInfo's two flags each give one of a profile's two XUIDs, which one undocumented, so both are asked
+// and the offline one (top four bits E) kept, as Avatar Thrift Store's app/profiles.cpp does (taking flag 1 for it
+// made an activated profile miss its own folder there).
+static uint64_t offline_xuid(uint32_t user)
+{
+	const uint32_t flags[2] = { SIGNIN_INFO_ONE_XUID, SIGNIN_INFO_OTHER_XUID };
+	for (uint32_t f = 0; f < 2; f++) {
+		SigninInfo info;
+		memset(&info, 0, sizeof info);
+		if (XamUserGetSigninInfo(user, flags[f], &info) == 0 && info.signin_state != SIGNIN_STATE_SIGNED_OUT &&
+			info.xuid >> 60 == OFFLINE_XUID_TOP)
+			return info.xuid;
+	}
+	return 0;
+}
+
+// The Content folders an item can be under: the shared one, then each signed-in profile's (no repeats). Returns how
+// many.
+static uint32_t item_owners(char owners[OWNERS][OWNER_CHARS + 1])
+{
+	snprintf(owners[0], OWNER_CHARS + 1, "%s", shared_owner);
+	uint32_t count = 1;
+	for (uint32_t user = 0; user < USERS; user++) {
+		const uint64_t xuid = offline_xuid(user);
+		if (!xuid)
+			continue;
+		snprintf(owners[count], OWNER_CHARS + 1, "%016llX", (unsigned long long)xuid);
+		bool seen = false;
+		for (uint32_t o = 1; o < count; o++)
+			seen |= strcmp(owners[o], owners[count]) == 0;
+		count += !seen;
+	}
+	return count;
+}
+
+// The item's package at path read: XSDK_AVATAR_ERROR_NOT_FOUND if there is none, else the read's result.
+static int read_item_at(const char *path, void **strb, uint32_t *size_bytes)
+{
+	HANDLE handle;
+	if (!NT_SUCCESS(open_read(&handle, path)))
+		return XSDK_AVATAR_ERROR_NOT_FOUND;
+	const int result = xsdk_avatar_package_read_file(read_handle, &handle, item_asset_file, strb, size_bytes);
+	(void)NtClose(handle);
+	if (result != XSDK_AVATAR_OK)
+		xsdk_log_write("avatar: %s: %s can't be read (%d)", path, item_asset_file, result);
+	return result;
+}
+
 int avatar_content_read_item(const uint8_t *id, void **strb, uint32_t *size_bytes)
 {
 	*strb = NULL;
 	char name[33];
 	uint32_t title;
 	xsdk_avatar_id_package_name(id, name, &title);
-	for (size_t f = 0; f < sizeof item_folders / sizeof item_folders[0]; f++) {
-		char path[160];
-		snprintf(path, sizeof path, "%s\\%08X\\%s\\%s", item_folders[f], (unsigned)title, item_content_type, name);
-		HANDLE handle;
-		if (!NT_SUCCESS(open_read(&handle, path)))
-			continue;
-		const int result = xsdk_avatar_package_read_file(read_handle, &handle, item_asset_file, strb, size_bytes);
-		(void)NtClose(handle);
-		if (result != XSDK_AVATAR_OK) {
-			xsdk_log_write("avatar: %s: %s can't be read (%d)", path, item_asset_file, result);
+	char owners[OWNERS][OWNER_CHARS + 1];
+	const uint32_t owner_count = item_owners(owners);
+	for (size_t d = 0; d < sizeof item_devices / sizeof item_devices[0]; d++)
+		for (uint32_t o = 0; o < owner_count; o++) {
+			char path[192];
+			snprintf(path, sizeof path, "%s\\Content\\%s\\%08X\\%s\\%s", item_devices[d], owners[o], (unsigned)title,
+				item_content_type, name);
+			const int result = read_item_at(path, strb, size_bytes);
+			if (result == XSDK_AVATAR_ERROR_NOT_FOUND)
+				continue;
+			if (result == XSDK_AVATAR_OK)
+				xsdk_log_write("avatar: item %s from %s", name, path);
 			return result;
 		}
-		xsdk_log_write("avatar: item %s from %s", name, path);
-		return XSDK_AVATAR_OK;
-	}
-	xsdk_log_write("avatar: item %s (title %08X): not on this console", name, (unsigned)title);
+	xsdk_log_write("avatar: item %s (title %08X): not on this console (%u places, %u profiles searched)", name,
+		(unsigned)title, (unsigned)(sizeof item_devices / sizeof item_devices[0]), (unsigned)(owner_count - 1));
 	return XSDK_AVATAR_ERROR_NOT_FOUND;
 }
 

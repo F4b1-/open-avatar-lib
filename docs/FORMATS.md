@@ -295,9 +295,13 @@ memory unit slots `Mu0` and `Mu1` (with `Mu0System`, `Mu1System`), the internal 
 Arcade consoles `BuiltInMuSfc` (with `BuiltInMuSfcSystem`), and `BuiltInMuUsb`, a directory like `Harddisk0`: the
 4 GB slims' internal flash, its content partition taken to be `Storage` (inferred, from an outside bug report; not
 yet seen on a console). Content at the hard drive's and USB devices' roots is established (Avatar Thrift Store
-installs items there); at the memory units' roots it is inferred. The library searches the shared folder
-(`0000000000000000`) of each, in the order of `item_folders` in avatar_content.c; items kept under a profile's
-own folder (`Content\<xuid>\`) are not searched yet.
+installs items there); at the memory units' roots it is inferred. Under `Content`, an item is in the shared folder
+(`0000000000000000`) or in a profile's own, named after the profile's offline XUID in 16 upper-case hex digits
+(`E...`; Avatar Thrift Store's `docs/STATUS.md` and `app/profiles.cpp`, where profiles live in
+`Content\<offline xuid>\FFFE07D1\00010000\`). The library searches each device in the order of `item_devices` in
+avatar_content.c, on each the shared folder, then every signed-in profile's. `XamUserGetSigninInfo`'s flags 1 and 2
+each return one of a profile's two XUIDs, which one undocumented; both are asked and the one starting with E kept.
+Items under a profile's folder were not yet seen on a console.
 
 ### 4.1 The stock asset pack (`AvatarAssetPack.toc`)
 
