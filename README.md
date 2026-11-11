@@ -1,16 +1,11 @@
-# xbox360_avatar_lib
+# Open Avatar Lib
 
-`xbox360_avatar_lib` is a clean-room C17 library for rendering and animating Xbox 360 Avatars in homebrew titles
-built on [xsdk](https://github.com/xenosworks/xsdk). With a few calls, your game can load the signed-in player's
-avatar from their profile, spawn NPCs from 1000-byte description files (created on a console or in
-[360sona](https://360sona.com/)), or assemble stock avatars by part name—complete with dashboard-accurate clothing,
-custom colours, facial expressions, automatic blinking, and voice-driven mouth movement.
-
-Every avatar asset is decoded at run time from the console the title runs on: the library reads the system's stock
-avatar pack (`\SEP`) and searches all connected storage devices (hard drive, USB drives, onboard flash, and memory
-units) for installed marketplace and award items. For motion, it plays the console's 60 stock emotes and idles with
-cross-fading and bone layering, and includes its own MIT-licensed `walk`, `run`, and `jump` animations—plus a
-Blender `.glb` rig exporter and converter for creating custom animations.
+`Open Avatar Lib` is an open-source C17 library for loading, animating, and rendering Xbox 360 Avatars in
+homebrew games and applications built on [xsdk](https://github.com/xenosworks/xsdk). It lets a title bring the
+signed-in player's own avatar—or custom NPCs—into a 3D scene in a few function calls, handling the console's
+avatar file formats, outfit assembly, facial expressions, skeletal animation, and Xenos GPU skinning behind the
+scenes. All meshes, textures, clothing items, and stock animations are read directly from the console at run time,
+so neither the library nor your game needs to bundle Microsoft assets.
 
 New here? Start with [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) and `samples/hello_avatar_world`.
 
@@ -63,29 +58,22 @@ xsdk_avatar_load_description(&npc, description_1000_bytes);  // from probe_manif
 xsdk_avatar_load_stock(&fallback, part_names, part_count);   // from stock pack record names
 ```
 
-The library is C17; C++ titles call the same C API. The avatar's space is metres, y up, facing +z, feet at y 0;
-`xsdk_avatar_placement` makes a world matrix from a position and a heading for `xsdk_avatar_set_transform` (the
-locomotion does it for you). A draw changes only the shaders, vertex constants 0-222, pixel constants 0-29, vertex
-stream 0, texture fetch slots 0-5 and the blend state (left off); the target, depth, culling and multisampling are
-yours. Avatars are lit per pixel by one light you set (`xsdk_avatar_set_light`). `include/xsdk/avatar.h` documents
-every call.
-
 ## The samples
 
 | Sample | What it shows |
 |---|---|
-| `samples/hello_avatar_world` | your avatar on a plain stage: walking, running and jumping, with its shadow. The first one to read and run. |
-| `samples/store` | a small game: walk your avatar round the Avatar Thrift Store among NPCs, with an emote wheel, your own animations, anti-aliasing in bands and screenshots. |
-| `samples/rig_export` | writes your avatar as a rig to animate in Blender (see "Making animations"). |
+| `samples/hello_avatar_world` | Your avatar on a plain stage: walking, running and jumping. A good starting point. |
+| `samples/store` | A slightly more advanced example: walk your avatar around the Avatar Thrift Store among NPCs, with an emote wheel, your own animations and anti-aliasing turned on. |
+| `samples/rig_export` | Helper-App: exports your avatar as a rig to animate in Blender or other tools(see "Making animations"). |
 
 ## The three layers
 
 - **The avatar layer** (`XsdkAvatar`, console only): load, play, update, draw, close; faces, talking, the light,
   the shadow, and locomotion on top.
-- **The animation layer** (PC too): stock animations (`xsdk_avatar_stock_animation`), a player of your own
-  (`XsdkAvatarPlayer`), the library's own walk, run and jump (`xsdk_avatar_animation_load_walk`, `_run`, `_jump`), the
-  locomotion that plays them (`xsdk_avatar_locomotion_*`), poses you sample, blend or set bone by bone, the skeleton
-  and skin matrices; and the camera and placement helpers.
+- **The animation layer** (PC too): stock animations (`xsdk_avatar_stock_animation`), the animations state machine
+  (`XsdkAvatarPlayer`), the library's own walk, run and jump animations (`xsdk_avatar_animation_load_walk`, `_run`, `_jump`), the
+  locomotion that plays them (`xsdk_avatar_locomotion_*`). Additionally, you can sample poses yourself: blend or set bone by bone. Also includes the skeleton,
+  skin matrices; as well as the camera and placement helpers.
 - **The asset layer** (PC too): the stock pack, item packages, descriptions, models, textures, skeletons and
   animations as plain structs, decoded as [docs/FORMATS.md](docs/FORMATS.md) describes.
 
