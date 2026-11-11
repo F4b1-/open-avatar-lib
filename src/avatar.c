@@ -286,6 +286,28 @@ void xsdk_avatar_set_transform(XsdkAvatar *avatar, const float world[16])
 	memcpy(avatar->world, world, sizeof avatar->world);
 }
 
+int xsdk_avatar_locomotion_load(XsdkAvatarLocomotion *locomotion, const XsdkAvatar *avatar)
+{
+	memset(locomotion, 0, sizeof *locomotion);
+	const XsdkAvatarAnimation *stand;
+	int result = xsdk_avatar_stock_animation(XSDK_AVATAR_ANIMATION_STAND, &stand);
+	if (result == XSDK_AVATAR_OK)
+		result = xsdk_avatar_locomotion_init(locomotion, avatar->info.gender, &avatar->skeleton, stand);
+	xsdk_log_write("avatar: locomotion: %d, walk %.3f m/s, run %.3f m/s%s", result, (double)locomotion->walk_speed,
+		(double)locomotion->run_speed, locomotion->can_jump ? ", jump" : "");
+	return result;
+}
+
+bool xsdk_avatar_locomotion_drive(XsdkAvatar *avatar, XsdkAvatarLocomotion *locomotion, float dx, float dz, bool run,
+	bool jump, float seconds, XsdkAvatarCollide collide, void *context)
+{
+	const bool jumped = jump && xsdk_avatar_locomotion_jump(locomotion, &avatar->player);
+	const bool moved =
+		xsdk_avatar_locomotion_update(locomotion, &avatar->player, dx, dz, run, seconds, collide, context);
+	xsdk_avatar_placement(avatar->world, locomotion->x, 0.0f, locomotion->z, locomotion->heading);
+	return jumped || moved;
+}
+
 void xsdk_avatar_draw(const XsdkAvatar *avatar, const float view_projection[16])
 {
 	float mvp[16];

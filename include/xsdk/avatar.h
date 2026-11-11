@@ -541,6 +541,63 @@ void xsdk_avatar_camera(float view_projection[16], const float eye[3], const flo
 // y from facing +z (so heading pi/2 faces +x). Any time, any thread.
 void xsdk_avatar_placement(float world[16], float x, float y, float z, float heading);
 
+// ---- Locomotion (PC too) ----
+//
+// An avatar that walks, runs and jumps where a stick points, with the library's own clips (xsdk_avatar_animation_
+// load_walk, _run, _jump) fitted to its body: each frame the title gives a direction on the ground and whether to
+// run; the avatar turns towards where it goes, moves at walking or running speed, is pushed out of what the title's
+// collision says it overlaps, and plays each clip at the pace its feet cover the ground, cross-faded. On the ground
+// (y 0) only. On the avatar layer, xsdk_avatar_locomotion_load and xsdk_avatar_locomotion_drive do it all:
+//
+//     XsdkAvatarLocomotion me;
+//     xsdk_avatar_locomotion_load(&me, avatar);                    // after the avatar loads
+//     each frame: xsdk_avatar_locomotion_drive(avatar, &me, dx, dz, run, jump, dt, NULL, NULL);
+//                 xsdk_avatar_update(avatar, dt);
+//     at the end: xsdk_avatar_locomotion_free(&me);                // with the avatar, after the same fence
+
+// What the avatar is doing.
+enum {
+	XSDK_AVATAR_STANDING = 0,
+	XSDK_AVATAR_WALKING = 1,
+	XSDK_AVATAR_RUNNING = 2,
+	XSDK_AVATAR_JUMPING = 3, // in place, until the jump has landed and the standing after it plays
+	XSDK_AVATAR_BUSY = 4,    // the title plays something of its own (an emote): the stick still interrupts it, or
+	                         // the title sets XSDK_AVATAR_STANDING when it ends
+};
+
+typedef struct {
+	XsdkAvatarAnimation walk, run, jump;
+	const XsdkAvatarAnimation *stand; // what it plays standing (not owned)
+	float walk_speed, run_speed;      // metres a second the clips' feet cover at XsdkAvatarPlayer.speed 1
+	bool can_run, can_jump;           // whether the run and the jump loaded (the walk must)
+	uint32_t state;                   // XSDK_AVATAR_STANDING, ...
+	float x, z;                       // where it stands, metres
+	float heading;                    // radians about y from facing +z, as xsdk_avatar_placement takes it
+	// The feel, set by the load and free to change: the stick pushed all the way walks at walk_top_speed and runs at
+	// run_top_speed (metres a second; 1.4 and 2.6); it turns at turn_rate radians a second (9); it is a circle of
+	// radius metres (0.28) for the collision.
+	float walk_top_speed, run_top_speed, turn_rate, radius;
+} XsdkAvatarLocomotion;
+
+// The title's collision: moves a circle of radius at (*x, *z) out of whatever it overlaps. context is the title's.
+typedef void (*XsdkAvatarCollide)(void *context, float *x, float *z, float radius);
+
+// Loads the walk, run and jump for a body (gender) and its skeleton, standing at the origin facing +z; stand is what
+// it plays when standing, and must outlive it. XSDK_AVATAR_ERROR_MEMORY, or the walk's load error; a run or jump that
+// doesn't load is left out (can_run, can_jump false). On an error it is left empty. At load time, any thread.
+int xsdk_avatar_locomotion_init(XsdkAvatarLocomotion *locomotion, uint32_t gender, const XsdkAvatarSkeleton *skeleton,
+	const XsdkAvatarAnimation *stand);
+// Frees its clips; on the avatar layer after a fence past the last frame that drew an avatar playing them.
+void xsdk_avatar_locomotion_free(XsdkAvatarLocomotion *locomotion);
+// Jumps in place, once, then stands: false (nothing done) if it can't jump or is jumping already.
+bool xsdk_avatar_locomotion_jump(XsdkAvatarLocomotion *locomotion, XsdkAvatarPlayer *player);
+// Moves it on by seconds, per frame before the player's update: towards (dx, dz), a direction on the ground whose
+// length (clamped to 1) is how far the stick is pushed (0 stands), running while run is set; then out of what
+// collide (or NULL) finds. Plays what fits on player. Returns true when it has just started walking or running, for
+// the title to drop what it was doing (a face, talking). Nothing moves while it jumps.
+bool xsdk_avatar_locomotion_update(XsdkAvatarLocomotion *locomotion, XsdkAvatarPlayer *player, float dx, float dz,
+	bool run, float seconds, XsdkAvatarCollide collide, void *context);
+
 // ---- The avatar layer (console only) ----
 //
 // An avatar loaded from the console's own files, ready to draw:
@@ -662,6 +719,16 @@ void xsdk_avatar_set_talking(XsdkAvatar *avatar, float level);
 
 // Where it stands: its world matrix (the identity after loading).
 void xsdk_avatar_set_transform(XsdkAvatar *avatar, const float world[16]);
+
+// Locomotion for this avatar (xsdk_avatar_locomotion_init): its body's clips fitted to its skeleton, standing with
+// XSDK_AVATAR_ANIMATION_STAND. Then set locomotion->x, z and heading to where it starts. Errors as the init, or as
+// xsdk_avatar_stock_animation for the stand.
+int xsdk_avatar_locomotion_load(XsdkAvatarLocomotion *locomotion, const XsdkAvatar *avatar);
+// A frame of it on this avatar, before xsdk_avatar_update: a jump if jump is set, the move
+// (xsdk_avatar_locomotion_update), and the avatar placed where it stands now. Returns true when it has just started
+// a jump, walking or running, for the title to drop what it was doing.
+bool xsdk_avatar_locomotion_drive(XsdkAvatar *avatar, XsdkAvatarLocomotion *locomotion, float dx, float dz, bool run,
+	bool jump, float seconds, XsdkAvatarCollide collide, void *context);
 // Draws it in the pose of its last update, through view_projection.
 void xsdk_avatar_draw(const XsdkAvatar *avatar, const float view_projection[16]);
 // Draws it in a pose of the caller's (XSDK_AVATAR_BONES bones): from a player of its own, sampled, blended, or set

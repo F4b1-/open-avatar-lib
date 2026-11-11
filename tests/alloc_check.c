@@ -168,6 +168,17 @@ static int load_own(const void *input)
 	return result;
 }
 
+// Locomotion (avatar_locomotion.c): its walk, run and jump; a run or jump that runs out of memory fails it too.
+static int load_locomotion(const void *input)
+{
+	(void)input;
+	XsdkAvatarLocomotion locomotion;
+	const int result = xsdk_avatar_locomotion_init(&locomotion, XSDK_AVATAR_MALE, &male, NULL);
+	if (result == XSDK_AVATAR_OK)
+		xsdk_avatar_locomotion_free(&locomotion);
+	return result;
+}
+
 static int read_item(const void *input)
 {
 	FILE *file = fopen(input, "rb");
@@ -234,6 +245,7 @@ int main(int argc, char **argv)
 	xsdk_avatar_model_free(&body);
 	free(strb);
 	check("load the walk, run and jump", load_own, NULL);
+	check("load the locomotion", load_locomotion, NULL);
 	for (int i = 2; i < argc; i++) {
 		char label[512];
 		snprintf(label, sizeof label, "read the item package %s", argv[i]);

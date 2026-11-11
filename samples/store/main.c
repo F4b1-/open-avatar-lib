@@ -1,6 +1,7 @@
 // Store: walk your avatar round the Avatar Thrift Store among NPCs, and emote from a wheel. The walk, run and jump
-// are the library's (locomotion.c), the camera follows (follow_camera.c), the frame is drawn in bands (bands.c); the
-// store (scene.c), its NPCs (npcs.c), the wheel (wheel.c) and its emotes (emotes.c) are this sample's own.
+// are the library's (xsdk_avatar_locomotion_*), the camera follows (follow_camera.c), the frame is drawn in bands
+// (bands.c); the store (scene.c), its NPCs (npcs.c), the wheel (wheel.c) and its emotes (emotes.c) are this
+// sample's own.
 //
 // Left stick: walk (run while the right trigger is held). A: jump. Right stick: turn the camera. LB held: the emote
 // wheel; right stick picks, letting go of LB plays it. Right stick click: 2 / 4 / 1 samples a pixel. Both triggers:
@@ -14,7 +15,6 @@
 #include "bands.h"
 #include "emotes.h"
 #include "follow_camera.h"
-#include "locomotion.h"
 #include "mesh.h"
 #include "npcs.h"
 #include "scene.h"
@@ -110,8 +110,9 @@ static XsdkAvatar *load_avatar(void)
 }
 
 // What the player bumps into: the store and the NPCs.
-static void collide(float *x, float *z, float radius)
+static void collide(void *context, float *x, float *z, float radius)
 {
+	(void)context;
 	scene_collide(x, z, radius);
 	npcs_collide(x, z, radius);
 }
@@ -120,7 +121,7 @@ static void collide(float *x, float *z, float radius)
 typedef struct {
 	XsdkAvatar *avatar;
 	uint32_t gender;
-	Locomotion me;
+	XsdkAvatarLocomotion me;
 	FollowCamera camera;
 	bool wheel_open;
 	int picked;      // the wheel's segment the stick points at, -1 for none
@@ -144,7 +145,7 @@ static void update_wheel(Game *g, const Pad *pad)
 			g->talk_left = talk_seconds;
 			npcs_answer(npcs_nearest(g->me.x, g->me.z, answer_reach));
 		}
-		g->me.state = LOCOMOTION_BUSY;
+		g->me.state = XSDK_AVATAR_BUSY;
 	}
 	if (!g->wheel_open)
 		g->picked = -1;
@@ -154,21 +155,19 @@ static void update_wheel(Game *g, const Pad *pad)
 // when an emote has ended; then the avatar and the NPCs moved on.
 static void update_player(Game *g, const Pad *pad, float dt)
 {
-	if ((pad->pressed & INPUT_GAMEPAD_A) && !g->wheel_open && locomotion_jump(&g->me)) {
-		xsdk_avatar_set_face(g->avatar, &emotes_neutral);
-		g->talk_left = 0.0f;
-	}
 	float direction[2];
 	follow_camera_direction(&g->camera, pad->lx, pad->ly, direction);
-	if (locomotion_update(&g->me, direction[0], direction[1], pad->run, dt, collide)) {
+	const bool jump = (pad->pressed & INPUT_GAMEPAD_A) && !g->wheel_open;
+	if (xsdk_avatar_locomotion_drive(
+			g->avatar, &g->me, direction[0], direction[1], pad->run, jump, dt, collide, NULL)) {
 		xsdk_avatar_set_face(g->avatar, &emotes_neutral);
 		g->talk_left = 0.0f;
 	}
 	g->talk_left -= dt;
 	xsdk_avatar_set_talking(g->avatar, g->talk_left > 0.0f ? 0.35f + 0.65f * fabsf(sinf(7.0f * g->clock)) : 0.0f);
-	if (g->me.state == LOCOMOTION_BUSY && xsdk_avatar_player(g->avatar)->current.loop && g->talk_left <= 0.0f) {
+	if (g->me.state == XSDK_AVATAR_BUSY && xsdk_avatar_player(g->avatar)->current.loop && g->talk_left <= 0.0f) {
 		xsdk_avatar_set_face(g->avatar, &emotes_neutral);
-		g->me.state = LOCOMOTION_STANDING;
+		g->me.state = XSDK_AVATAR_STANDING;
 	}
 	xsdk_avatar_update(g->avatar, dt);
 	npcs_update(dt, g->me.x, g->me.z);
@@ -210,8 +209,10 @@ static bool start(Game *g, uint32_t *width, uint32_t *height)
 	}
 	xsdk_avatar_set_light(&light);
 	g->avatar = load_avatar();
-	if (!g->avatar || !locomotion_load(&g->me, g->avatar, 0.0f, 1.0f, pi))
+	if (!g->avatar || xsdk_avatar_locomotion_load(&g->me, g->avatar) != XSDK_AVATAR_OK)
 		return false;
+	g->me.z = 1.0f;
+	g->me.heading = pi; // facing into the store
 	XsdkAvatarInfo info;
 	xsdk_avatar_info(g->avatar, &info);
 	g->gender = info.gender;
@@ -291,7 +292,7 @@ int main(void)
 	(void)xsdk_gpu_wait(xsdk_gpu_fence(), FENCE_TIMEOUT_MS);
 	xsdk_avatar_close(game.avatar);
 	npcs_close();
-	locomotion_free(&game.me);
+	xsdk_avatar_locomotion_free(&game.me);
 	emotes_free();
 	xsdk_avatar_shutdown();
 	mesh_close();

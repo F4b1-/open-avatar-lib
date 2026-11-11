@@ -36,8 +36,7 @@ three). They blink, idle now and then (the stock idles), turn to the player when
 
 | File | What it does |
 |---|---|
-| `main.c` | loading, the controls, the game loop |
-| `locomotion.c` | walking, running and jumping with the library's clips, at the pace their feet go; nothing of the store in it, so it can seed a game of your own |
+| `main.c` | loading, the controls, the game loop; walking, running and jumping through the library's locomotion (`xsdk_avatar_locomotion_drive`) |
 | `follow_camera.c` | the camera orbiting the avatar, kept inside the room, and the stick's direction as it sees it |
 | `bands.c` | the frame drawn in bands that fit eDRAM, each resolved (and into a screenshot) |
 | `emotes.c` | the wheel's emotes: stock animations with faces, talking, and your own animations |
