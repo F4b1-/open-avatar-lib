@@ -16,10 +16,6 @@ says where.
 
 ## Build and run
 
-```
-wsl.exe -d Debian --exec bash -c 'cd /mnt/c/Users/fabia/projekte/xbox360_avatar_lib && tools/probe_pack/build.sh'
-```
-
 Copy `build/probe_pack/probe_pack.xex` to a folder on the console, launch it from Aurora, wait until it returns
 to the dashboard, then fetch `probe_pack.log` and any `FFFE07DF00000002` or `AvatarAssetPack.toc` beside it.
 Put the copied files in `references/`, never in the repository.

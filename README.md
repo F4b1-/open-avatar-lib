@@ -1,10 +1,16 @@
 # xbox360_avatar_lib
 
-Xbox 360 avatars for homebrew built on [xsdk](https://github.com/xenosworks/xsdk): the player's own avatar, or NPCs
-shipped as descriptions, dressed, textured and animated with the console's stock animations, walking, running and
-jumping, drawn in your title's own pass. Every avatar asset is read at run time from the console the title runs on;
-the library ships code and a few animations of its own (a walk, a run and a jump, keyed in Blender, MIT), as the
-stock set has no locomotion.
+`xbox360_avatar_lib` is a clean-room C17 library for rendering and animating Xbox 360 Avatars in homebrew titles
+built on [xsdk](https://github.com/xenosworks/xsdk). With a few calls, your game can load the signed-in player's
+avatar from their profile, spawn NPCs from 1000-byte description files (created on a console or in
+[360sona](https://360sona.com/)), or assemble stock avatars by part name—complete with dashboard-accurate clothing,
+custom colours, facial expressions, automatic blinking, and voice-driven mouth movement.
+
+Every avatar asset is decoded at run time from the console the title runs on: the library reads the system's stock
+avatar pack (`\SEP`) and searches all connected storage devices (hard drive, USB drives, onboard flash, and memory
+units) for installed marketplace and award items. For motion, it plays the console's 60 stock emotes and idles with
+cross-fading and bone layering, and includes its own MIT-licensed `walk`, `run`, and `jump` animations—plus a
+Blender `.glb` rig exporter and converter for creating custom animations.
 
 New here? Start with [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) and `samples/hello_avatar_world`.
 
@@ -13,7 +19,7 @@ New here? Start with [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) and `sam
 ```c
 #include "xsdk/avatar.h"
 
-// After xsdk_gpu_open:
+// After xsdk_gpu_open: load an avatar (profile, 1000-byte description, or stock part names):
 XsdkAvatar *avatar;
 if (xsdk_avatar_load_profile(&avatar, 0) != XSDK_AVATAR_OK)
 	return 1;
@@ -21,27 +27,40 @@ XsdkAvatarLocomotion me;
 xsdk_avatar_locomotion_load(&me, avatar);   // the library's walk, run and jump, fitted to this avatar
 xsdk_avatar_play(avatar, XSDK_AVATAR_ANIMATION_STAND, XSDK_AVATAR_LOOP);
 
-// Each frame: move it where the stick points (dx, dz on the ground), then update and draw it.
-xsdk_avatar_locomotion_drive(avatar, &me, dx, dz, run_held, jump_pressed, dt, NULL, NULL);
-xsdk_avatar_update(avatar, dt);
-// After setting your target and depth state; a camera 7 m away and above, 0.7 radians high, seeing 0.1 to 30 m:
-const float eye[3] = { 0.0f, 3.5f, 7.0f }, target[3] = { 0.0f, 0.6f, 0.0f };
-float view_projection[16];
-xsdk_avatar_camera(view_projection, eye, target, 0.7f, aspect, 0.1f, 30.0f);
-xsdk_avatar_draw_shadow(avatar, view_projection);
-xsdk_avatar_draw(avatar, view_projection);
+// Each frame, inside your render pass (after setting your target and depth state):
+while (running) {
+	xsdk_avatar_locomotion_drive(avatar, &me, dx, dz, run_held, jump_pressed, dt, NULL, NULL);
+	xsdk_avatar_update(avatar, dt);
 
-// A wave, then back to standing; a face; talking from a 0-1 loudness (it blinks on its own):
-xsdk_avatar_play(avatar, XSDK_AVATAR_ANIMATION_WAVE, XSDK_AVATAR_ONCE);
-xsdk_avatar_queue(avatar, XSDK_AVATAR_ANIMATION_STAND, XSDK_AVATAR_LOOP);
-const XsdkAvatarFace happy = { XSDK_AVATAR_EYE_HAPPY, XSDK_AVATAR_EYE_HAPPY, 0, 0, XSDK_AVATAR_MOUTH_HAPPY };
-xsdk_avatar_set_face(avatar, &happy);
-xsdk_avatar_set_talking(avatar, level);
+	// A camera 7 m away and above, 0.7 radians high, seeing 0.1 to 30 m:
+	const float eye[3] = { 0.0f, 3.5f, 7.0f }, target[3] = { 0.0f, 0.6f, 0.0f };
+	float view_projection[16];
+	xsdk_avatar_camera(view_projection, eye, target, 0.7f, aspect, 0.1f, 30.0f);
+	xsdk_avatar_draw_shadow(avatar, view_projection);
+	xsdk_avatar_draw(avatar, view_projection);
+}
 
 // At the end, after a fence past the last frame that drew it:
 xsdk_avatar_close(avatar);
 xsdk_avatar_locomotion_free(&me);
 xsdk_avatar_shutdown();
+```
+
+### Emotes, faces and NPCs
+
+```c
+// Play a one-shot wave, then cross-fade back to standing:
+xsdk_avatar_play(avatar, XSDK_AVATAR_ANIMATION_WAVE, XSDK_AVATAR_ONCE);
+xsdk_avatar_queue(avatar, XSDK_AVATAR_ANIMATION_STAND, XSDK_AVATAR_LOOP);
+
+// Set a facial expression and drive the mouth from a 0-1 loudness (it blinks on its own):
+const XsdkAvatarFace happy = { XSDK_AVATAR_EYE_HAPPY, XSDK_AVATAR_EYE_HAPPY, 0, 0, XSDK_AVATAR_MOUTH_HAPPY };
+xsdk_avatar_set_face(avatar, &happy);
+xsdk_avatar_set_talking(avatar, level);
+
+// Load NPCs or fallbacks (missing marketplace items fall back to stock parts automatically):
+xsdk_avatar_load_description(&npc, description_1000_bytes);  // from probe_manifest or 360sona.com
+xsdk_avatar_load_stock(&fallback, part_names, part_count);   // from stock pack record names
 ```
 
 The library is C17; C++ titles call the same C API. The avatar's space is metres, y up, facing +z, feet at y 0;
@@ -77,7 +96,7 @@ In your title's `CMakeLists.txt`:
 
 ```cmake
 add_subdirectory(<path to xbox360_avatar_lib> xsdk_avatar)
-target_link_libraries(<title> PRIVATE xsdk_avatar)
+target_link_libraries(<title> PRIVATE xsdk_avatar m)
 ```
 
 It generates its shaders while building, so it needs xsdk's `build/host/libxsc.so` (`make` in xsdk) and glslang in
@@ -108,11 +127,15 @@ In WSL, from this folder, naming an xsdk checkout:
 
 ## Checks on the PC
 
-They run on your own console files (the stock pack, `FFFE07DF00000002`, copied off the console with
-`tools/probe_pack`; descriptions and item packages), never on files in this repository. `./build.sh pc` takes the
-compiler from `$CC` (gcc if unset). CI (`.github/workflows/ci.yml`) builds them all with GCC and Clang on every push
-and pull request, runs `player_check` and `camera_check` (the two that need no console files), and compiles the
-Python tools; the console build and the checks on console files stay local.
+They run on your own console files, never on files in this repository:
+
+- `tools/probe_pack` copies the stock pack (`FFFE07DF00000002`) off a running console, where FTP cannot open `\SEP`.
+- `tools/probe_manifest` dumps each signed-in profile's 1000-byte avatar description (`manifest_<n>.bin`), for
+  `outfit_check` or for shipping as an NPC.
+
+`./build.sh pc` takes the compiler from `$CC` (gcc if unset). CI (`.github/workflows/ci.yml`) builds them all with GCC
+and Clang on every push and pull request, runs `player_check` and `camera_check` (the two that need no console files),
+and compiles the Python tools; the console build and the checks on console files stay local.
 
 - `player_check`: the player's cross-fades, queueing and timing, on made-up animations.
 - `camera_check`: the camera and placement helpers.
