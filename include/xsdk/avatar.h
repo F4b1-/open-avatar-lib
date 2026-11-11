@@ -527,6 +527,20 @@ bool xsdk_avatar_player_finished(const XsdkAvatarPlayer *player);
 // The pose now: XSDK_AVATAR_BONES bones.
 void xsdk_avatar_player_pose(const XsdkAvatarPlayer *player, XsdkAvatarBonePose *pose);
 
+// ---- Cameras and placement (PC too) ----
+//
+// The matrices a title hands the avatar layer, so that it needn't write its own: 16 floats, column-major, for column
+// vectors (p' = M p); world space metres, y up.
+
+// A perspective camera at eye looking at target, y up: its view-projection, clip depth 0 at near to 1 at far (as
+// xsdk's GPU takes it). fov_y is the vertical field of view in radians, aspect the target's width over its height,
+// near and far in metres (0 < near < far). Looking straight up or down, its right is +x. Any time, any thread.
+void xsdk_avatar_camera(float view_projection[16], const float eye[3], const float target[3], float fov_y,
+	float aspect, float near, float far);
+// An avatar's world matrix (xsdk_avatar_set_transform): standing at x, y, z (its feet), turned heading radians about
+// y from facing +z (so heading pi/2 faces +x). Any time, any thread.
+void xsdk_avatar_placement(float world[16], float x, float y, float z, float heading);
+
 // ---- The avatar layer (console only) ----
 //
 // An avatar loaded from the console's own files, ready to draw:

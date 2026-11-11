@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "avatar_internal.h"
+#include "avatar_math.h"
 #include "avatar_runtime.h"
 #include "xsdk/log.h"
 
@@ -26,10 +27,11 @@ struct XsdkAvatar {
 	AvatarFaceFrames frames; // of the last update
 };
 
-static const float identity[16] = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 };
-
 static const float blink_seconds = 0.15f;
 static const float blink_gap_min = 2.0f, blink_gap_max = 6.0f;
+static const float first_blink_min = 0.5f; // after loading, sooner than the gap between blinks
+// Each load's random seed: the load's number times 2^32 / the golden ratio, which spreads them over 32 bits.
+static const uint32_t seed_step = 0x9E3779B9u;
 static const float talk_step_seconds = 0.1f;
 static const float talk_silent = 0.05f; // levels below this are silence
 
@@ -52,6 +54,7 @@ static uint32_t next_random(XsdkAvatar *avatar)
 	return x;
 }
 
+// low to high, from the random number's top 24 bits (as many as a float's mantissa holds).
 static float random_between(XsdkAvatar *avatar, float low, float high)
 {
 	return low + (high - low) * (float)(next_random(avatar) >> 8) / (float)(1u << 24);
@@ -108,6 +111,7 @@ static void skin_of(const XsdkAvatar *avatar, const XsdkAvatarBonePose *pose, fl
 		xsdk_avatar_skin_matrices(&avatar->skeleton, pose, skin);
 		return;
 	}
+	// Each matrix is three rows of four: the identity's ones at row r, column r.
 	memset(skin, 0, sizeof(float) * 12 * XSDK_AVATAR_BONES);
 	for (uint32_t b = 0; b < XSDK_AVATAR_BONES; b++)
 		skin[b][0] = skin[b][5] = skin[b][10] = 1.0f;
@@ -120,29 +124,9 @@ static void pose_now(XsdkAvatar *avatar)
 	skin_of(avatar, pose, avatar->skin);
 }
 
-static int load(XsdkAvatar **out, const XsdkAvatarDescription *d)
+// What the avatar keeps of its outfit once drawn: the skeleton, and the counts and sizes XsdkAvatarInfo reports.
+static void keep_from_outfit(XsdkAvatar *avatar, const AvatarOutfit *outfit)
 {
-	*out = NULL;
-	int result = avatar_render_open();
-	if (result != XSDK_AVATAR_OK)
-		return result;
-	AvatarOutfit *outfit = avatar_malloc(sizeof *outfit, "an avatar");
-	XsdkAvatar *avatar = avatar_calloc(1, sizeof *avatar, "an avatar");
-	if (!outfit || !avatar) {
-		free(outfit);
-		free(avatar);
-		return XSDK_AVATAR_ERROR_MEMORY;
-	}
-	result = avatar_outfit_load(outfit, d);
-	if (result == XSDK_AVATAR_OK)
-		result = avatar_render_build(&avatar->drawable, outfit);
-	if (result != XSDK_AVATAR_OK) {
-		xsdk_log_write("avatar: load failed: %d", result);
-		avatar_outfit_free(outfit);
-		free(outfit);
-		free(avatar);
-		return result;
-	}
 	avatar->skeleton = outfit->skeleton;
 	avatar->info = (XsdkAvatarInfo){ .gender = outfit->gender,
 		.part_count = outfit->part_count,
@@ -152,22 +136,54 @@ static int load(XsdkAvatar **out, const XsdkAvatarDescription *d)
 		.height = outfit->top,
 		.gpu_bytes = avatar->drawable.gpu_bytes,
 		.cpu_bytes = (uint32_t)sizeof *avatar + avatar->drawable.cpu_bytes };
-	avatar_outfit_free(outfit);
-	free(outfit);
-	memcpy(avatar->world, identity, sizeof identity);
+}
+
+// A loaded avatar's start: at the origin, nothing playing, its own random numbers, blinking soon.
+static void start(XsdkAvatar *avatar)
+{
+	memcpy(avatar->world, avatar_identity, sizeof avatar_identity);
 	xsdk_avatar_player_init(&avatar->player);
 	pose_now(avatar);
 	static uint32_t loads;
-	avatar->random = 0x9E3779B9u * ++loads;
+	avatar->random = seed_step * ++loads;
 	avatar->blinking = true;
-	avatar->blink_in = random_between(avatar, 0.5f, blink_gap_max);
+	avatar->blink_in = random_between(avatar, first_blink_min, blink_gap_max);
 	face_now(avatar);
+}
+
+static int load(XsdkAvatar **out, const XsdkAvatarDescription *d)
+{
+	*out = NULL;
+	int result = avatar_render_open();
+	if (result != XSDK_AVATAR_OK)
+		return result;
+	AvatarOutfit *outfit = avatar_malloc(sizeof *outfit, "an avatar");
+	XsdkAvatar *avatar = avatar_calloc(1, sizeof *avatar, "an avatar");
+	if (!outfit || !avatar) {
+		result = XSDK_AVATAR_ERROR_MEMORY;
+		goto done;
+	}
+	result = avatar_outfit_load(outfit, d);
+	if (result == XSDK_AVATAR_OK)
+		result = avatar_render_build(&avatar->drawable, outfit);
+	if (result != XSDK_AVATAR_OK) {
+		xsdk_log_write("avatar: load failed: %d", result);
+		avatar_outfit_free(outfit);
+		goto done;
+	}
+	keep_from_outfit(avatar, outfit);
+	avatar_outfit_free(outfit);
+	start(avatar);
 	xsdk_log_write("avatar: loaded: %u parts, %u draws, %u replaced, %u left out, %u KB GPU, %u KB CPU",
 		(unsigned)avatar->info.part_count, (unsigned)avatar->info.draw_count, (unsigned)avatar->info.replaced_count,
 		(unsigned)avatar->info.left_out_count, (unsigned)(avatar->info.gpu_bytes / 1024),
 		(unsigned)(avatar->info.cpu_bytes / 1024));
 	*out = avatar;
-	return XSDK_AVATAR_OK;
+	avatar = NULL;
+done:
+	free(outfit);
+	free(avatar);
+	return result;
 }
 
 int xsdk_avatar_load_profile(XsdkAvatar **avatar, uint32_t user_index)
@@ -270,19 +286,10 @@ void xsdk_avatar_set_transform(XsdkAvatar *avatar, const float world[16])
 	memcpy(avatar->world, world, sizeof avatar->world);
 }
 
-// a times b, column-major.
-static void multiply(float out[16], const float a[16], const float b[16])
-{
-	for (uint32_t c = 0; c < 4; c++)
-		for (uint32_t r = 0; r < 4; r++)
-			out[4 * c + r] = a[r] * b[4 * c] + a[4 + r] * b[4 * c + 1] + a[8 + r] * b[4 * c + 2] +
-				a[12 + r] * b[4 * c + 3];
-}
-
 void xsdk_avatar_draw(const XsdkAvatar *avatar, const float view_projection[16])
 {
 	float mvp[16];
-	multiply(mvp, view_projection, avatar->world);
+	avatar_matrix_multiply(mvp, view_projection, avatar->world);
 	avatar_render_draw(
 		&avatar->drawable, view_projection, mvp, avatar->world, (const float (*)[12])avatar->skin, &avatar->frames);
 }
@@ -292,7 +299,7 @@ void xsdk_avatar_draw_pose(const XsdkAvatar *avatar, const XsdkAvatarBonePose *p
 	float skin[XSDK_AVATAR_BONES][12];
 	skin_of(avatar, pose, skin);
 	float mvp[16];
-	multiply(mvp, view_projection, avatar->world);
+	avatar_matrix_multiply(mvp, view_projection, avatar->world);
 	avatar_render_draw(
 		&avatar->drawable, view_projection, mvp, avatar->world, (const float (*)[12])skin, &avatar->frames);
 }

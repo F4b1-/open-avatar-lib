@@ -142,8 +142,8 @@ static float turn_towards(float heading, float target, float step)
 
 static void place(const Npc *n)
 {
-	const float c = cosf(n->heading), s = sinf(n->heading);
-	const float world[16] = { c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, n->spec.x, 0, n->spec.z, 1 };
+	float world[16];
+	xsdk_avatar_placement(world, n->spec.x, 0.0f, n->spec.z, n->heading);
 	xsdk_avatar_set_transform(n->avatar, world);
 }
 

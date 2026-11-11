@@ -28,17 +28,6 @@ constexpr XsdkAvatarStockPart stock_parts[] = {
 	{ "Brown Formal Shoes", 0xFF663D1F },
 };
 
-// A camera 3.5 m in front of the avatar, looking at its middle: column-major, depth 0 to 1.
-void camera(float vp[16], float aspect, float middle)
-{
-	const float focal = 1.0f / std::tan(0.3f), near = 0.1f, far = 20.0f, k = far / (far - near);
-	const float distance = 3.5f;
-	const float m[16] = { focal / aspect, 0, 0, 0, 0, focal, 0, 0, 0, 0, -k, -1, 0, -middle * focal,
-		(distance - near) * k, distance };
-	for (int i = 0; i < 16; i++)
-		vp[i] = m[i];
-}
-
 double seconds_now()
 {
 	timespec now;
@@ -90,8 +79,11 @@ int main()
 	XsdkDepthStencilState depth;
 	xsdk_gpu_depth_stencil_state(&depth, &depth_setting);
 	xsdk_gpu_set_depth_clear(1.0f, 0);
+	// A camera 3.5 m in front of the avatar, looking at its middle; 0.6 radians (34 degrees) high, 0.1 to 20 m.
+	const float middle = 0.52f * info.height;
+	const float eye[3] = { 0.0f, middle, 3.5f }, target[3] = { 0.0f, middle, 0.0f };
 	float vp[16];
-	camera(vp, static_cast<float>(width) / static_cast<float>(height), 0.52f * info.height);
+	xsdk_avatar_camera(vp, eye, target, 0.6f, static_cast<float>(width) / static_cast<float>(height), 0.1f, 20.0f);
 
 	uint16_t previous_buttons = 0;
 	double last = seconds_now();

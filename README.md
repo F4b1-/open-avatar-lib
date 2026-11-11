@@ -21,7 +21,11 @@ xsdk_avatar_play(avatar, XSDK_AVATAR_ANIMATION_STAND, XSDK_AVATAR_LOOP);
 
 // Each frame, after setting your target and depth state:
 xsdk_avatar_update(avatar, dt);
-xsdk_avatar_draw(avatar, view_projection); // column-major, depth 0 to 1
+// A camera 3.5 m in front, at chest height: 0.6 radians high, seeing 0.1 to 20 m.
+const float eye[3] = { 0.0f, 1.0f, 3.5f }, target[3] = { 0.0f, 1.0f, 0.0f };
+float view_projection[16];
+xsdk_avatar_camera(view_projection, eye, target, 0.6f, aspect, 0.1f, 20.0f);
+xsdk_avatar_draw(avatar, view_projection);
 
 // A wave, then back to standing:
 xsdk_avatar_play(avatar, XSDK_AVATAR_ANIMATION_WAVE, XSDK_AVATAR_ONCE);
@@ -41,9 +45,10 @@ xsdk_avatar_shutdown();
 scene: the player's, NPCs from description files, and stock ones. `samples/store` is a small game: walk your
 avatar round the Avatar Thrift Store among NPCs, with the library's walk, run and jump and an emote wheel.
 
-The avatar's space is metres, y up, facing +z, feet at y 0; place it with `xsdk_avatar_set_transform`. A draw
-changes only the shaders, vertex constants 0-222, pixel constants 0-29, vertex stream 0, texture fetch slots 0-5 and
-the blend state (left off); depth, culling and multisampling are yours. Avatars are lit per pixel by one light you
+The avatar's space is metres, y up, facing +z, feet at y 0; place it with `xsdk_avatar_set_transform`, its matrix
+made by `xsdk_avatar_placement` from a position and a heading. A draw changes only the shaders, vertex constants
+0-222, pixel constants 0-29, vertex stream 0, texture fetch slots 0-5 and the blend state (left off); depth, culling
+and multisampling are yours. Avatars are lit per pixel by one light you
 set (`xsdk_avatar_set_light`: direction, colour, sky and ground ambient, highlight). `avatar.h` documents every call.
 
 ## The three layers

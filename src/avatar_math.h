@@ -1,11 +1,31 @@
 #ifndef XSDK_AVATAR_MATH_H
 #define XSDK_AVATAR_MATH_H
 
-// The library's small vector and quaternion math, in one place. Vectors are float[3], quaternions float[4] as
-// x, y, z, w (as XsdkAvatarBonePose holds them). Builds for the PC.
+// The library's small vector, quaternion and matrix math, in one place. Vectors are float[3], quaternions float[4] as
+// x, y, z, w (as XsdkAvatarBonePose holds them), matrices float[16], column-major (avatar.h). Builds for the PC.
 
 #include <math.h>
+#include <stdbool.h>
 #include <stdint.h>
+
+static const float avatar_identity[16] = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 };
+
+// a times b, column-major: b's transform, then a's.
+static inline void avatar_matrix_multiply(float out[16], const float a[16], const float b[16])
+{
+	for (uint32_t c = 0; c < 4; c++)
+		for (uint32_t r = 0; r < 4; r++)
+			out[4 * c + r] =
+				a[r] * b[4 * c] + a[4 + r] * b[4 * c + 1] + a[8 + r] * b[4 * c + 2] + a[12 + r] * b[4 * c + 3];
+}
+
+// a x b.
+static inline void avatar_cross(float out[3], const float *a, const float *b)
+{
+	out[0] = a[1] * b[2] - a[2] * b[1];
+	out[1] = a[2] * b[0] - a[0] * b[2];
+	out[2] = a[0] * b[1] - a[1] * b[0];
+}
 
 static inline void avatar_quaternion_identity(float q[4])
 {
@@ -21,6 +41,17 @@ static inline float avatar_dot3(const float *a, const float *b)
 static inline float avatar_dot4(const float *a, const float *b)
 {
 	return a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+}
+
+// v scaled to length 1; false (v unchanged) if it has no length to scale.
+static inline bool avatar_normalize3(float *v)
+{
+	const float length = sqrtf(avatar_dot3(v, v));
+	if (!(length > 0.0f))
+		return false;
+	for (uint32_t k = 0; k < 3; k++)
+		v[k] /= length;
+	return true;
 }
 
 // q turned into -q (the same rotation) if it lies on the other side of `near` (their dot product below 0), so that

@@ -191,7 +191,8 @@ static void place_avatars(void)
 {
 	for (uint32_t a = 0; a < avatar_count; a++) {
 		avatars[a].x = ((float)a - 0.5f * (float)(avatar_count - 1)) * spacing;
-		const float world[16] = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, avatars[a].x, 0, 0, 1 };
+		float world[16];
+		xsdk_avatar_placement(world, avatars[a].x, 0.0f, 0.0f, 0.0f);
 		xsdk_avatar_set_transform(avatars[a].avatar, world);
 		(void)xsdk_avatar_play(avatars[a].avatar, XSDK_AVATAR_ANIMATION_STAND, XSDK_AVATAR_LOOP);
 		xsdk_avatar_update(avatars[a].avatar, 0.7f * (float)a);
@@ -208,21 +209,8 @@ static void gesture(XsdkAvatar *avatar, const char *animation)
 // The camera orbiting target at yaw, distance metres away: a column-major view-projection with depth 0 to 1.
 static void camera(float vp[16], const float target[3], float yaw, float distance, float aspect)
 {
-	const float focal = 1.0f / tanf(0.5f * 0.6f); // 34 degrees vertical field of view
-	const float near = 0.1f, far = 30.0f, k = far / (far - near);
 	const float eye[3] = { target[0] + distance * sinf(yaw), target[1], target[2] + distance * cosf(yaw) };
-	const float f[3] = { -sinf(yaw), 0.0f, -cosf(yaw) }; // forward
-	const float r[3] = { -f[2], 0.0f, f[0] };            // right: forward x up
-	const float u[3] = { 0.0f, 1.0f, 0.0f };
-	const float scale[4] = { focal / aspect, focal, k, 1.0f };
-	const float *axes[4] = { r, u, f, f };
-	for (uint32_t row = 0; row < 4; row++) {
-		const float *a = axes[row];
-		for (uint32_t col = 0; col < 3; col++)
-			vp[4 * col + row] = a[col] * scale[row];
-		const float along = -(a[0] * eye[0] + a[1] * eye[1] + a[2] * eye[2]);
-		vp[12 + row] = row == 2 ? (along - near) * k : along * scale[row];
-	}
+	xsdk_avatar_camera(vp, eye, target, 0.6f, aspect, 0.1f, 30.0f); // 34 degrees vertical field of view
 }
 
 // a times b: the rotation b, then a.

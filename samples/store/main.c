@@ -173,31 +173,20 @@ static bool make_walk(XsdkAvatar *avatar, XsdkAvatarAnimation *walk, float *spee
 	return result == XSDK_AVATAR_OK && *speed > 0.0f;
 }
 
-// A camera at eye looking at target: column-major view-projection, depth 0 to 1, and its right, up, forward axes.
+// A camera at eye looking at target (0.95 radians high, 5 cm to 40 m), and its right, up and forward axes for the
+// scene's lighting: the view-projection's x, y and w rows, which are those axes scaled.
 static void look(float vp[16], float axes[3][3], const float eye[3], const float target[3], float aspect)
 {
-	const float focal = 1.0f / tanf(0.5f * 0.95f), near = 0.05f, far = 40.0f, k = far / (far - near);
-	float f[3] = { target[0] - eye[0], target[1] - eye[1], target[2] - eye[2] };
-	const float fl = sqrtf(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
-	for (uint32_t i = 0; i < 3; i++)
-		f[i] /= fl;
-	float r[3] = { -f[2], 0.0f, f[0] };
-	const float rl = sqrtf(r[0] * r[0] + r[2] * r[2]);
-	r[0] /= rl;
-	r[2] /= rl;
-	const float u[3] = { r[1] * f[2] - r[2] * f[1], r[2] * f[0] - r[0] * f[2], r[0] * f[1] - r[1] * f[0] };
-	const float *rows[4] = { r, u, f, f };
-	const float scale[4] = { focal / aspect, focal, k, 1.0f };
-	for (uint32_t row = 0; row < 4; row++) {
-		const float *a = rows[row];
+	xsdk_avatar_camera(vp, eye, target, 0.95f, aspect, 0.05f, 40.0f);
+	const uint32_t rows[3] = { 0, 1, 3 };
+	for (uint32_t a = 0; a < 3; a++) {
+		float length = 0.0f;
 		for (uint32_t col = 0; col < 3; col++)
-			vp[4 * col + row] = a[col] * scale[row];
-		const float along = -(a[0] * eye[0] + a[1] * eye[1] + a[2] * eye[2]);
-		vp[12 + row] = row == 2 ? (along - near) * k : along * scale[row];
+			length += vp[4 * col + rows[a]] * vp[4 * col + rows[a]];
+		length = sqrtf(length);
+		for (uint32_t col = 0; col < 3; col++)
+			axes[a][col] = vp[4 * col + rows[a]] / length;
 	}
-	memcpy(axes[0], r, sizeof r);
-	memcpy(axes[1], u, sizeof u);
-	memcpy(axes[2], f, sizeof f);
 }
 
 static void light_constants(float out[MESH_LIGHT_VECTORS][4], const XsdkAvatarLight *light, const float axes[3][3])
@@ -410,8 +399,8 @@ int main(void)
 			xsdk_avatar_set_face(avatar, &neutral);
 			state = STANDING;
 		}
-		const float c = cosf(heading), s = sinf(heading);
-		const float world[16] = { c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, x, 0, z, 1 };
+		float world[16];
+		xsdk_avatar_placement(world, x, 0.0f, z, heading);
 		xsdk_avatar_set_transform(avatar, world);
 		xsdk_avatar_update(avatar, dt);
 		npcs_update(dt, x, z);

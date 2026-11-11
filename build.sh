@@ -10,13 +10,13 @@ root="$(cd "$(dirname "$0")" && pwd)"
 if [ "${1:-}" = pc ]; then
 	xsdk="${2:-$root/../avatar_thrift_store/third_party/xsdk}"
 	# The asset and animation layers: the files that build for the PC.
-	portable=(alloc animation description lzx model pack player shape skeleton stfs strb texture own_animations)
+	portable=(alloc animation camera description lzx model pack player shape skeleton stfs strb texture own_animations)
 	sources=("${portable[@]/#/$root/src/avatar_}")
 	sources=("${sources[@]/%/.c}")
 	mkdir -p "$root/build/pc/generated"
 	python3 "$root/tools/gen_clips.py" "$root/animations" > "$root/build/pc/generated/avatar_clips.h"
 	flags=(-std=c17 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" -I"$root/build/pc/generated")
-	for tool in avatar_dump player_check walk_check anim_check; do
+	for tool in avatar_dump player_check walk_check anim_check camera_check; do
 		gcc "${flags[@]}" "${sources[@]}" "$root/tests/$tool.c" -lm -o "$root/build/pc/$tool"
 	done
 	# The avatar layer's loading half and the rig export too, with xsdk's headers for their declarations and the
@@ -27,7 +27,7 @@ if [ "${1:-}" = pc ]; then
 	# The out-of-memory tests, with AddressSanitizer: a leak or a double free in an error path ends them.
 	gcc "${flags[@]}" -g -fsanitize=address "${sources[@]}" "$root/tests/alloc_check.c" -lm 		-o "$root/build/pc/alloc_check"
 	gcc "${flags[@]}" -g -fsanitize=address -I"$xsdk/include" "${sources[@]}" "$root/src/avatar_outfit.c" 		"$root/src/avatar_export.c" "$root/src/avatar_bake.c" "$root/src/avatar_png.c" "$root/tests/outfit_check.c" 		-lm -o "$root/build/pc/outfit_alloc_check"
-	echo "Built $root/build/pc/avatar_dump, player_check, walk_check, anim_check, outfit_check, alloc_check and outfit_alloc_check"
+	echo "Built $root/build/pc/avatar_dump, player_check, walk_check, anim_check, camera_check, outfit_check, alloc_check and outfit_alloc_check"
 	exit 0
 fi
 
