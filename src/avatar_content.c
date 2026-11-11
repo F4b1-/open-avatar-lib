@@ -13,15 +13,22 @@
 enum {
 	FILE_SHARE_DELETE = 0x00000004,
 	MAX_ANIMATIONS = 64, // 60 in the pack (SPECS.md, section 4.1)
+	// XamUserGetSigninInfo's flags: 1 and 2 each ask for one of the two XUIDs (Avatar Thrift Store's
+	// app/kernel_extra.h); either does to learn whether the user is signed in.
+	SIGNIN_INFO_ONE_XUID = 1,
+	SIGNIN_STATE_SIGNED_OUT = 0,
 };
 
 static const char pack_path[] = "\\SEP\\Content\\0000000000000000\\FFFE07DF\\00008000\\FFFE07DF00000002";
-// Where shared item packages are: the hard drive first (Avatar Thrift Store installs there), then USB.
+// Where shared item packages are: the hard drive first (Avatar Thrift Store installs there), then USB; each under
+// <title id>\00009000\<package> (SPECS.md, section 4: the avatar items' content type folder).
 static const char *const item_folders[] = {
 	"\\Device\\Harddisk0\\Partition1\\Content\\0000000000000000",
 	"\\Device\\Mass0\\Content\\0000000000000000",
 	"\\Device\\Mass1\\Content\\0000000000000000",
 };
+static const char item_content_type[] = "00009000";
+static const char item_asset_file[] = "asset_v2.bin"; // an item package's STRB file (SPECS.md, section 3)
 
 // xenia:src/xenia/kernel/xam/xam_user.cc (XUSER_SIGNIN_INFO), as Avatar Thrift Store declares it.
 typedef struct {
@@ -37,12 +44,15 @@ uint32_t XamUserGetSigninInfo(uint32_t user_index, uint32_t flags, SigninInfo *i
 // Fills the 1000-byte description synchronously when overlapped is NULL (SPECS.md, section 4.6).
 uint32_t XamAvatarGetManifestLocalUser(uint32_t user_index, void *description, void *overlapped);
 
-static HANDLE pack_file;
-static XsdkAvatarPack *pack;
-// The pack's animation records, and those decoded so far (frame_count 0 until then).
-static uint32_t animation_count;
-static uint32_t animation_records[MAX_ANIMATIONS];
-static XsdkAvatarAnimation animations[MAX_ANIMATIONS];
+// What the library keeps open between loads: the stock pack, opened on first use, and the stock animations, each
+// decoded the first time it is asked for.
+static struct {
+	HANDLE pack_file;
+	XsdkAvatarPack *pack;
+	uint32_t animation_count;
+	uint32_t animation_records[MAX_ANIMATIONS];    // the pack's animation records
+	XsdkAvatarAnimation animations[MAX_ANIMATIONS]; // those decoded so far (frame_count 0 until then)
+} content;
 
 static int read_handle(void *context, uint64_t offset, void *buffer, uint32_t length)
 {
@@ -64,35 +74,42 @@ static NTSTATUS open_read(HANDLE *handle, const char *path)
 		FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE);
 }
 
+// The pack's animation records: those whose component mask is the animations' and nothing else.
+static void find_animations(void)
+{
+	content.animation_count = 0;
+	for (uint32_t i = 0; i < xsdk_avatar_pack_count(content.pack) && content.animation_count < MAX_ANIMATIONS; i++)
+		if (xsdk_avatar_pack_mask(content.pack, i) == XSDK_AVATAR_SLOT_ANIMATION)
+			content.animation_records[content.animation_count++] = i;
+}
+
 int avatar_content_pack(const XsdkAvatarPack **out)
 {
-	if (pack) {
-		*out = pack;
+	if (content.pack) {
+		*out = content.pack;
 		return XSDK_AVATAR_OK;
 	}
-	const NTSTATUS status = open_read(&pack_file, pack_path);
+	const NTSTATUS status = open_read(&content.pack_file, pack_path);
 	if (!NT_SUCCESS(status)) {
 		xsdk_log_write("avatar: can't open the stock pack %s: 0x%08X", pack_path, (unsigned)status);
 		return XSDK_AVATAR_ERROR_READ;
 	}
-	const int result = xsdk_avatar_pack_open(&pack, read_handle, &pack_file);
+	const int result = xsdk_avatar_pack_open(&content.pack, read_handle, &content.pack_file);
 	if (result != XSDK_AVATAR_OK) {
 		xsdk_log_write("avatar: can't read the stock pack: %d", result);
-		(void)NtClose(pack_file);
+		(void)NtClose(content.pack_file);
 		return result;
 	}
-	animation_count = 0;
-	for (uint32_t i = 0; i < xsdk_avatar_pack_count(pack) && animation_count < MAX_ANIMATIONS; i++)
-		if (xsdk_avatar_pack_mask(pack, i) == XSDK_AVATAR_SLOT_ANIMATION)
-			animation_records[animation_count++] = i;
-	xsdk_log_write("avatar: stock pack of %u records, %u animations", (unsigned)xsdk_avatar_pack_count(pack),
-		(unsigned)animation_count);
-	*out = pack;
+	find_animations();
+	xsdk_log_write("avatar: stock pack of %u records, %u animations", (unsigned)xsdk_avatar_pack_count(content.pack),
+		(unsigned)content.animation_count);
+	*out = content.pack;
 	return XSDK_AVATAR_OK;
 }
 
 int avatar_content_read_stock(uint32_t record, void **strb, uint32_t *size_bytes)
 {
+	const XsdkAvatarPack *pack = content.pack;
 	*strb = NULL;
 	*size_bytes = xsdk_avatar_pack_asset_size(pack, record);
 	if (!*size_bytes) {
@@ -121,14 +138,14 @@ int avatar_content_read_item(const uint8_t *id, void **strb, uint32_t *size_byte
 	xsdk_avatar_id_package_name(id, name, &title);
 	for (size_t f = 0; f < sizeof item_folders / sizeof item_folders[0]; f++) {
 		char path[160];
-		snprintf(path, sizeof path, "%s\\%08X\\00009000\\%s", item_folders[f], (unsigned)title, name);
+		snprintf(path, sizeof path, "%s\\%08X\\%s\\%s", item_folders[f], (unsigned)title, item_content_type, name);
 		HANDLE handle;
 		if (!NT_SUCCESS(open_read(&handle, path)))
 			continue;
-		const int result = xsdk_avatar_package_read_file(read_handle, &handle, "asset_v2.bin", strb, size_bytes);
+		const int result = xsdk_avatar_package_read_file(read_handle, &handle, item_asset_file, strb, size_bytes);
 		(void)NtClose(handle);
 		if (result != XSDK_AVATAR_OK) {
-			xsdk_log_write("avatar: %s: asset_v2.bin can't be read (%d)", path, result);
+			xsdk_log_write("avatar: %s: %s can't be read (%d)", path, item_asset_file, result);
 			return result;
 		}
 		xsdk_log_write("avatar: item %s from %s", name, path);
@@ -142,7 +159,8 @@ int avatar_content_read_profile(uint32_t user_index, uint8_t bytes[XSDK_AVATAR_D
 {
 	SigninInfo info;
 	memset(&info, 0, sizeof info);
-	if (XamUserGetSigninInfo(user_index, 1, &info) != 0 || info.signin_state == 0)
+	if (XamUserGetSigninInfo(user_index, SIGNIN_INFO_ONE_XUID, &info) != 0 ||
+		info.signin_state == SIGNIN_STATE_SIGNED_OUT)
 		return XSDK_AVATAR_ERROR_NOT_FOUND;
 	const uint32_t result = XamAvatarGetManifestLocalUser(user_index, bytes, NULL);
 	xsdk_log_write("avatar: user %u (%.16s): description 0x%08X", (unsigned)user_index, info.name, (unsigned)result);
@@ -151,26 +169,48 @@ int avatar_content_read_profile(uint32_t user_index, uint8_t bytes[XSDK_AVATAR_D
 
 void avatar_content_close(void)
 {
-	for (uint32_t a = 0; a < animation_count; a++)
-		xsdk_avatar_animation_free(&animations[a]);
-	memset(animations, 0, sizeof animations);
-	animation_count = 0;
-	if (!pack)
-		return;
-	xsdk_avatar_pack_close(pack);
-	(void)NtClose(pack_file);
-	pack = NULL;
+	for (uint32_t a = 0; a < content.animation_count; a++)
+		xsdk_avatar_animation_free(&content.animations[a]);
+	if (content.pack) {
+		xsdk_avatar_pack_close(content.pack);
+		(void)NtClose(content.pack_file);
+	}
+	memset(&content, 0, sizeof content);
 }
 
 uint32_t xsdk_avatar_stock_animation_count(void)
 {
 	const XsdkAvatarPack *p;
-	return avatar_content_pack(&p) == XSDK_AVATAR_OK ? animation_count : 0;
+	return avatar_content_pack(&p) == XSDK_AVATAR_OK ? content.animation_count : 0;
 }
 
 const char *xsdk_avatar_stock_animation_name(uint32_t index)
 {
-	return index < xsdk_avatar_stock_animation_count() ? xsdk_avatar_pack_name(pack, animation_records[index]) : "";
+	return index < xsdk_avatar_stock_animation_count()
+		? xsdk_avatar_pack_name(content.pack, content.animation_records[index])
+		: "";
+}
+
+// Decodes stock animation a, the first time it is asked for.
+static int decode_stock_animation(uint32_t a, const char *name)
+{
+	XsdkAvatarAnimation *animation = &content.animations[a];
+	if (animation->frame_count)
+		return XSDK_AVATAR_OK;
+	uint32_t size;
+	void *strb;
+	int result = avatar_content_read_stock(content.animation_records[a], &strb, &size);
+	if (result != XSDK_AVATAR_OK)
+		return result;
+	result = xsdk_avatar_animation_decode(animation, strb, size);
+	free(strb);
+	if (result != XSDK_AVATAR_OK) {
+		xsdk_log_write("avatar: animation %s: %d", name, result);
+		return result;
+	}
+	xsdk_log_write("avatar: animation %s: %u frames, %.2f s", name, (unsigned)animation->frame_count,
+		(double)xsdk_avatar_animation_length(animation));
+	return XSDK_AVATAR_OK;
 }
 
 int xsdk_avatar_stock_animation(const char *name, const XsdkAvatarAnimation **animation)
@@ -179,26 +219,13 @@ int xsdk_avatar_stock_animation(const char *name, const XsdkAvatarAnimation **an
 	int result = avatar_content_pack(&p);
 	if (result != XSDK_AVATAR_OK)
 		return result;
-	for (uint32_t a = 0; a < animation_count; a++) {
-		if (strcmp(xsdk_avatar_pack_name(pack, animation_records[a]), name) != 0)
+	for (uint32_t a = 0; a < content.animation_count; a++) {
+		if (strcmp(xsdk_avatar_pack_name(p, content.animation_records[a]), name) != 0)
 			continue;
-		if (!animations[a].frame_count) {
-			uint32_t size;
-			void *strb;
-			result = avatar_content_read_stock(animation_records[a], &strb, &size);
-			if (result != XSDK_AVATAR_OK)
-				return result;
-			result = xsdk_avatar_animation_decode(&animations[a], strb, size);
-			free(strb);
-			if (result != XSDK_AVATAR_OK) {
-				xsdk_log_write("avatar: animation %s: %d", name, result);
-				return result;
-			}
-			xsdk_log_write("avatar: animation %s: %u frames, %.2f s", name, (unsigned)animations[a].frame_count,
-				(double)xsdk_avatar_animation_length(&animations[a]));
-		}
-		*animation = &animations[a];
-		return XSDK_AVATAR_OK;
+		result = decode_stock_animation(a, name);
+		if (result == XSDK_AVATAR_OK)
+			*animation = &content.animations[a];
+		return result;
 	}
 	xsdk_log_write("avatar: no stock animation named %s", name);
 	return XSDK_AVATAR_ERROR_NOT_FOUND;
