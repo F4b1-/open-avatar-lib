@@ -113,7 +113,8 @@ int avatar_content_read_stock(uint32_t record, void **strb, uint32_t *size_bytes
 	*strb = NULL;
 	*size_bytes = xsdk_avatar_pack_asset_size(pack, record);
 	if (!*size_bytes) {
-		xsdk_log_write("avatar: stock record %u (%s) has no asset", (unsigned)record, xsdk_avatar_pack_name(pack, record));
+		xsdk_log_write(
+			"avatar: stock record %u (%s) has no asset", (unsigned)record, xsdk_avatar_pack_name(pack, record));
 		return XSDK_AVATAR_ERROR_NOT_FOUND;
 	}
 	void *data = avatar_malloc(*size_bytes, "a stock asset");
