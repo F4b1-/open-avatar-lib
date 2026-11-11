@@ -326,6 +326,12 @@ void xsdk_avatar_draw_pose(const XsdkAvatar *avatar, const XsdkAvatarBonePose *p
 		&avatar->drawable, view_projection, mvp, avatar->world, (const float (*)[12])skin, &avatar->frames);
 }
 
+void xsdk_avatar_draw_shadow(const XsdkAvatar *avatar, const float view_projection[16])
+{
+	// The world matrix's translation: where the avatar's feet are.
+	avatar_render_shadow(view_projection, avatar->world[12], avatar->world[13], avatar->world[14]);
+}
+
 const XsdkAvatarSkeleton *xsdk_avatar_skeleton(const XsdkAvatar *avatar)
 {
 	return &avatar->skeleton;

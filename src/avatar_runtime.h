@@ -156,6 +156,8 @@ int avatar_render_build(AvatarDrawable *drawable, const AvatarOutfit *outfit);
 // the frames each layer has).
 void avatar_render_draw(const AvatarDrawable *drawable, const float view_projection[16], const float mvp[16],
 	const float world[16], const float (*skin)[12], const AvatarFaceFrames *face);
+// A soft round shadow on the ground at (x, y, z) (an avatar's feet), blended over what is drawn there.
+void avatar_render_shadow(const float view_projection[16], float x, float y, float z);
 // Frees its GPU memory and textures, and empties it; only after a fence past the last frame that drew it.
 void avatar_render_free(AvatarDrawable *drawable);
 

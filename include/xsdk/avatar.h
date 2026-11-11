@@ -731,6 +731,11 @@ bool xsdk_avatar_locomotion_drive(XsdkAvatar *avatar, XsdkAvatarLocomotion *loco
 	bool jump, float seconds, XsdkAvatarCollide collide, void *context);
 // Draws it in the pose of its last update, through view_projection.
 void xsdk_avatar_draw(const XsdkAvatar *avatar, const float view_projection[16]);
+// Draws a soft round shadow on the ground under it: a dark disc of 0.38 m radius, darkest under its feet, where its
+// world matrix puts them (its translation), blended by its alpha over what is drawn there. Draw it after the ground
+// and before the avatars. It changes what a draw does (shaders, constants, vertex stream 0, the blend state, left as
+// no blending), and writes depth if the title's depth state does, 5 mm above the ground.
+void xsdk_avatar_draw_shadow(const XsdkAvatar *avatar, const float view_projection[16]);
 // Draws it in a pose of the caller's (XSDK_AVATAR_BONES bones): from a player of its own, sampled, blended, or set
 // bone by bone.
 void xsdk_avatar_draw_pose(const XsdkAvatar *avatar, const XsdkAvatarBonePose *pose, const float view_projection[16]);

@@ -57,12 +57,25 @@ enum {
 	TEXTURE_ALIGN_BYTES = 4096, // xsdk_texture_attach's
 	DXT_BLOCK_ROWS = 4,         // texel rows a row of DXT blocks covers
 	BLANK_SIDE = 4,
+
+	// The shadow: a quad of positions; its vertex shader takes the view-projection and where it lies (4 + 1 vectors),
+	// its pixel shader its middle and radius, and its colour and strength (2).
+	SHADOW_VERTICES = 6,
+	SHADOW_STRIDE_BYTES = 3 * 4,
+	SHADOW_VERTEX_VECTORS = 5,
+	SHADOW_PIXEL_VECTORS = 2,
 };
+
+// The shadow under an avatar: a disc this wide, this dark at its middle, lifted this far above the ground so that a
+// floor drawn at the same height doesn't hide it. As the store sample drew it by hand before.
+static const float shadow_radius = 0.38f, shadow_strength = 0.45f, shadow_lift = 0.005f;
 
 // What every avatar draws with, made on first use (avatar_render_open), and the light set for all of them.
 static struct {
 	bool opened;
 	XsdkShader vertex_shader, item_shader, head_shader;
+	XsdkShader shadow_vertex_shader, shadow_pixel_shader;
+	volatile uint32_t *shadow_quad; // SHADOW_VERTICES positions: a unit square round the origin on the ground
 	XsdkSamplerState sampler, clamp_sampler; // XSDK_AVATAR_ADDRESS_WRAP and _CLAMP (SPECS.md, section 3.6)
 	XsdkTexture blank; // transparent black: a missing mask, decal or face layer
 	XsdkBlendState alpha_blend, no_blend; // see-through parts, by their alpha; and back to none after
@@ -170,18 +183,43 @@ static NTSTATUS make_blank(void)
 	return status;
 }
 
+// The shadow's vertex layout (location 0, a position) and its quad: two triangles over the unit square round the
+// origin on the ground, placed and scaled as each shadow is drawn.
+static NTSTATUS make_shadow_quad(void)
+{
+	const XsdkVertexElement position = { .usage = XSDK_USAGE_POSITION, .format = XSDK_VERTEX_FLOAT3 };
+	NTSTATUS status = xsdk_shader_set_vertex_layout(
+		&renderer.shadow_vertex_shader, &position, 1, (const uint32_t[]){ SHADOW_STRIDE_BYTES });
+	if (!NT_SUCCESS(status))
+		return status;
+	static const float corners[SHADOW_VERTICES][3] = { { -1, 0, 1 }, { 1, 0, 1 }, { 1, 0, -1 }, { -1, 0, 1 },
+		{ 1, 0, -1 }, { -1, 0, -1 } };
+	renderer.shadow_quad = xsdk_gpu_alloc(sizeof corners);
+	if (!renderer.shadow_quad)
+		return STATUS_NO_MEMORY;
+	for (uint32_t v = 0; v < SHADOW_VERTICES; v++)
+		for (uint32_t c = 0; c < 3; c++)
+			store_float(renderer.shadow_quad + 3 * v + c, corners[v][c]);
+	xsdk_gpu_invalidate(xsdk_gpu_address(renderer.shadow_quad), sizeof corners);
+	return status;
+}
+
 int avatar_render_open(void)
 {
 	if (renderer.opened)
 		return XSDK_AVATAR_OK;
 	if (!load(&renderer.vertex_shader, &avatar_vertex) || !load(&renderer.item_shader, &avatar_item_pixel) ||
-		!load(&renderer.head_shader, &avatar_head_pixel)) {
+		!load(&renderer.head_shader, &avatar_head_pixel) ||
+		!load(&renderer.shadow_vertex_shader, &avatar_shadow_vertex) ||
+		!load(&renderer.shadow_pixel_shader, &avatar_shadow_pixel)) {
 		avatar_render_close();
 		return XSDK_AVATAR_ERROR_GPU;
 	}
 	NTSTATUS status = set_layout();
 	if (NT_SUCCESS(status))
 		status = make_blank();
+	if (NT_SUCCESS(status))
+		status = make_shadow_quad();
 	if (!NT_SUCCESS(status)) {
 		xsdk_log_write("avatar: draw setup failed: 0x%08X", (unsigned)status);
 		avatar_render_close();
@@ -196,13 +234,17 @@ int avatar_render_open(void)
 
 void avatar_render_close(void)
 {
-	XsdkShader *const shaders[] = { &renderer.head_shader, &renderer.item_shader, &renderer.vertex_shader };
-	for (uint32_t s = 0; s < 3; s++)
+	XsdkShader *const shaders[] = { &renderer.head_shader, &renderer.item_shader, &renderer.vertex_shader,
+		&renderer.shadow_pixel_shader, &renderer.shadow_vertex_shader };
+	for (uint32_t s = 0; s < sizeof shaders / sizeof shaders[0]; s++)
 		if (shaders[s]->microcode)
 			xsdk_shader_free(shaders[s]);
 	if (renderer.blank.address)
 		xsdk_texture_free(&renderer.blank);
 	memset(&renderer.blank, 0, sizeof renderer.blank);
+	if (renderer.shadow_quad)
+		xsdk_gpu_free(renderer.shadow_quad);
+	renderer.shadow_quad = NULL;
 	renderer.opened = false;
 }
 
@@ -680,6 +722,25 @@ void avatar_render_draw(const AvatarDrawable *d, const float view_projection[16]
 			draw_one(d, draw, face);
 		}
 	}
+	xsdk_gpu_set_blend(&renderer.no_blend);
+}
+
+void avatar_render_shadow(const float view_projection[16], float x, float y, float z)
+{
+	float push[SHADOW_VERTEX_VECTORS][4];
+	memcpy(push[0], view_projection, 16 * sizeof(float));
+	const float place[4] = { x, y + shadow_lift, z, shadow_radius };
+	memcpy(push[4], place, sizeof place);
+	const float pixel[SHADOW_PIXEL_VECTORS][4] = { { x, 0.0f, z, shadow_radius },
+		{ 0.0f, 0.0f, 0.0f, shadow_strength } };
+	xsdk_gpu_set_shaders(&renderer.shadow_vertex_shader, &renderer.shadow_pixel_shader);
+	write_literals(&avatar_shadow_vertex, true);
+	write_literals(&avatar_shadow_pixel, false);
+	xsdk_gpu_set_vertex_constants(avatar_shadow_vertex.push_register, push[0], SHADOW_VERTEX_VECTORS);
+	xsdk_gpu_set_pixel_constants(avatar_shadow_pixel.push_register, pixel[0], SHADOW_PIXEL_VECTORS);
+	xsdk_gpu_set_vertices(0, xsdk_gpu_address(renderer.shadow_quad), SHADOW_VERTICES * SHADOW_STRIDE_BYTES);
+	xsdk_gpu_set_blend(&renderer.alpha_blend);
+	xsdk_gpu_draw(XSDK_PRIMITIVE_TRIANGLE_LIST, SHADOW_VERTICES);
 	xsdk_gpu_set_blend(&renderer.no_blend);
 }
 

@@ -18,7 +18,9 @@ The shaders follow SPECS.md, section 3.6:
   a reflection map looked up from the normal in view space by its strength (binding 4 of SPECS.md, inferred);
 - avatar_head_pixel: the skin colour, then each of the six face layers, r * A + g * B + b * C, by its alpha;
 - both lit per pixel the same way (LIGHTING, SPECS.md section 5.3): a light wrapped round the surface, an ambient
-  blended from the ground's colour below to the sky's above, and a highlight towards the camera.
+  blended from the ground's colour below to the sky's above, and a highlight towards the camera;
+- avatar_shadow_vertex and avatar_shadow_pixel: a soft round shadow on the ground under an avatar
+  (xsdk_avatar_draw_shadow), a unit square placed and scaled, darkest at its middle.
 """
 
 import struct
@@ -179,10 +181,42 @@ LIGHTING
 """.replace("LIGHT_MEMBERS", LIGHT_MEMBERS).replace("LIGHTING\n", LIGHTING)
 
 
+SHADOW_VERTEX = """#version 450
+layout(location = 0) in vec3 a_position;
+layout(location = 0) out vec4 v_world;
+// place: where the shadow lies (xyz) and its radius (w): the unit square round the origin scaled and moved there.
+layout(push_constant) uniform Push { mat4 view_projection; vec4 place; } pc;
+
+void main()
+{
+	vec3 world = a_position * pc.place.www + pc.place.xyz;
+	gl_Position = pc.view_projection * vec4(world, 1.0);
+	v_world = vec4(world, 1.0);
+}
+"""
+
+# A soft round shadow, darkest at the middle, fading to nothing at the radius; drawn blended by its alpha.
+SHADOW_PIXEL = """#version 450
+layout(location = 0) in vec4 v_world;
+layout(location = 0) out vec4 o_color;
+// center: the shadow's middle (x, z) and radius (w); color: its colour and its strength at the middle (a).
+layout(push_constant) uniform Push { vec4 center; vec4 color; } pc;
+
+void main()
+{
+	vec2 d = (v_world.xz - pc.center.xz) / pc.center.ww;
+	vec4 r = vec4(dot(d, d));
+	vec4 a = clamp(1.0 - r, 0.0, 1.0);
+	o_color = vec4(pc.color.rgb, 0.0) + vec4(0.0, 0.0, 0.0, 1.0) * (a * a * pc.color.aaaa);
+}
+"""
+
 SHADERS = (
     ("avatar_vertex", "vert", VERTEX),
     ("avatar_item_pixel", "frag", ITEM_PIXEL),
     ("avatar_head_pixel", "frag", HEAD_PIXEL),
+    ("avatar_shadow_vertex", "vert", SHADOW_VERTEX),
+    ("avatar_shadow_pixel", "frag", SHADOW_PIXEL),
 )
 
 
