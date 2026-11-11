@@ -1,4 +1,4 @@
-// The stock asset pack: AvatarAssetPack.toc (SPECS.md, section 4.1) inside the STFS package FFFE07DF00000002 (4.3).
+// The stock asset pack: AvatarAssetPack.toc (FORMATS.md, section 4.1) inside the STFS package FFFE07DF00000002 (4.3).
 // Big-endian. Opening it reads the table of records and their English names; the records' files are read on
 // demand. Builds for the PC.
 

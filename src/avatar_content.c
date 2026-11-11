@@ -1,4 +1,4 @@
-// The console's avatar files (avatar_runtime.h): the stock pack (SPECS.md, section 4.3), item packages (section 4),
+// The console's avatar files (avatar_runtime.h): the stock pack (FORMATS.md, section 4.3), item packages (section 4),
 // profiles' descriptions (section 4.6), and the stock animations decoded once for every avatar.
 
 #include <stdio.h>
@@ -12,7 +12,7 @@
 
 enum {
 	FILE_SHARE_DELETE = 0x00000004,
-	MAX_ANIMATIONS = 64, // 60 in the pack (SPECS.md, section 4.1)
+	MAX_ANIMATIONS = 64, // 60 in the pack (FORMATS.md, section 4.1)
 	// XamUserGetSigninInfo's flags: 1 and 2 each ask for one of the two XUIDs (Avatar Thrift Store's
 	// app/kernel_extra.h); either does to learn whether the user is signed in.
 	SIGNIN_INFO_ONE_XUID = 1,
@@ -21,14 +21,14 @@ enum {
 
 static const char pack_path[] = "\\SEP\\Content\\0000000000000000\\FFFE07DF\\00008000\\FFFE07DF00000002";
 // Where shared item packages are: the hard drive first (Avatar Thrift Store installs there), then USB; each under
-// <title id>\00009000\<package> (SPECS.md, section 4: the avatar items' content type folder).
+// <title id>\00009000\<package> (FORMATS.md, section 4: the avatar items' content type folder).
 static const char *const item_folders[] = {
 	"\\Device\\Harddisk0\\Partition1\\Content\\0000000000000000",
 	"\\Device\\Mass0\\Content\\0000000000000000",
 	"\\Device\\Mass1\\Content\\0000000000000000",
 };
 static const char item_content_type[] = "00009000";
-static const char item_asset_file[] = "asset_v2.bin"; // an item package's STRB file (SPECS.md, section 3)
+static const char item_asset_file[] = "asset_v2.bin"; // an item package's STRB file (FORMATS.md, section 3)
 
 // xenia:src/xenia/kernel/xam/xam_user.cc (XUSER_SIGNIN_INFO), as Avatar Thrift Store declares it.
 typedef struct {
@@ -41,7 +41,7 @@ typedef struct {
 } SigninInfo;
 
 uint32_t XamUserGetSigninInfo(uint32_t user_index, uint32_t flags, SigninInfo *info);
-// Fills the 1000-byte description synchronously when overlapped is NULL (SPECS.md, section 4.6).
+// Fills the 1000-byte description synchronously when overlapped is NULL (FORMATS.md, section 4.6).
 uint32_t XamAvatarGetManifestLocalUser(uint32_t user_index, void *description, void *overlapped);
 
 // What the library keeps open between loads: the stock pack, opened on first use, and the stock animations, each
@@ -61,7 +61,7 @@ static int read_handle(void *context, uint64_t offset, void *buffer, uint32_t le
 	return NT_SUCCESS(status) && io_status.information == length ? 0 : 1;
 }
 
-// Opens for reading, sharing everything: the system holds the pack open (SPECS.md, section 4.3).
+// Opens for reading, sharing everything: the system holds the pack open (FORMATS.md, section 4.3).
 static NTSTATUS open_read(HANDLE *handle, const char *path)
 {
 	const ANSI_STRING name = { .length = (uint16_t)strlen(path),

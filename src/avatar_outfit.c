@@ -8,12 +8,12 @@
 #include "avatar_runtime.h"
 #include "xsdk/log.h"
 
-// The face features' component masks, in the Head's slot order (SPECS.md, section 3.5).
+// The face features' component masks, in the Head's slot order (FORMATS.md, section 3.5).
 static const uint32_t layer_masks[AVATAR_HEAD_LAYERS] = { XSDK_AVATAR_SLOT_SKIN_FEATURES,
 	XSDK_AVATAR_SLOT_FACIAL_HAIR, XSDK_AVATAR_SLOT_EYEBROWS, XSDK_AVATAR_SLOT_EYES, XSDK_AVATAR_SLOT_MOUTH,
 	XSDK_AVATAR_SLOT_EYE_SHADOW };
 
-// Per slot, the description colours its red, green and blue stand for (SPECS.md, section 3.6).
+// Per slot, the description colours its red, green and blue stand for (FORMATS.md, section 3.6).
 enum { WHITE = XSDK_AVATAR_COLORS, BLACK };
 static const uint32_t layer_sources[AVATAR_HEAD_LAYERS][3] = {
 	{ XSDK_AVATAR_COLOR_FEATURE_1, XSDK_AVATAR_COLOR_FEATURE_2, XSDK_AVATAR_COLOR_SKIN },
@@ -24,13 +24,13 @@ static const uint32_t layer_sources[AVATAR_HEAD_LAYERS][3] = {
 	{ XSDK_AVATAR_COLOR_EYE_SHADOW, BLACK, BLACK },
 };
 
-// Face colours for stock avatars, which have no description: the user's own description's (SPECS.md, 4.6).
+// Face colours for stock avatars, which have no description: the user's own description's (FORMATS.md, 4.6).
 static const uint32_t stock_colors[XSDK_AVATAR_COLORS] = {
 	0xFFDCAD8F, 0xFF4D331F, 0xFFB56157, 0xFF727F35, 0xFF493421, 0xFF5395CA, 0xFF493421, 0xFFCF5969, 0xFFCF5969,
 };
 
 // Stand-ins for missing items, per gender: the slots an avatar looks wrong without. Missing accessories are left
-// out. Stock outfits that drew right on the console (SPECS.md, section 6).
+// out. Stock outfits that drew right on the console (test runs 1-3, EVIDENCE.md).
 typedef struct {
 	uint32_t slot;
 	const char *names[2]; // male, female
@@ -47,14 +47,14 @@ static const StandIn stand_ins[] = {
 enum {
 	STAND_IN_SLOTS =
 		XSDK_AVATAR_SLOT_HAIR | XSDK_AVATAR_SLOT_SHIRT | XSDK_AVATAR_SLOT_TROUSERS | XSDK_AVATAR_SLOT_SHOES,
-	BODY_MALE = 0, // the bodies' pack records (SPECS.md, section 4.1)
+	BODY_MALE = 0, // the bodies' pack records (FORMATS.md, section 4.1)
 	BODY_FEMALE = 1,
 	ITEM_SLOTS = 0xFFFF, // the part of a component mask a description's item keeps (avatar.h)
 	NO_RECORD = UINT32_MAX, // a part from an item package, not the pack
 	SKIN_SLOTS = XSDK_AVATAR_SLOT_HEAD | XSDK_AVATAR_SLOT_BODY,
 };
 
-// The face features (SPECS.md, sections 3.5 and 4.6), and the description colour each one's own colour sets.
+// The face features (FORMATS.md, sections 3.5 and 4.6), and the description colour each one's own colour sets.
 enum {
 	FACE_FEATURES = XSDK_AVATAR_SLOT_EYES | XSDK_AVATAR_SLOT_EYEBROWS | XSDK_AVATAR_SLOT_MOUTH |
 		XSDK_AVATAR_SLOT_FACIAL_HAIR | XSDK_AVATAR_SLOT_SKIN_FEATURES | XSDK_AVATAR_SLOT_EYE_SHADOW |
@@ -87,7 +87,7 @@ static void to_rgb(uint32_t index, const uint32_t *colors, float *rgb)
 	argb_to_rgb(colors[index], rgb);
 }
 
-// A stock id's component mask: its first four bytes, big-endian (SPECS.md, section 4.6).
+// A stock id's component mask: its first four bytes, big-endian (FORMATS.md, section 4.6).
 static uint32_t id_mask(const uint8_t *id)
 {
 	return avatar_be32(id);
@@ -107,7 +107,7 @@ static int unless_stopping(int result)
 	return stops_load(result) ? result : XSDK_AVATAR_OK;
 }
 
-// The hiding shape of a stock part: its pack record links to a body template (SPECS.md, section 3.7).
+// The hiding shape of a stock part: its pack record links to a body template (FORMATS.md, section 3.7).
 static int load_template(AvatarPart *part)
 {
 	uint8_t id[XSDK_AVATAR_ID_BYTES];
@@ -195,7 +195,7 @@ static int add_part(
 }
 
 // A face feature that isn't a texture layer (chin, nose, ears, ...): a shape that moves the Head's vertices
-// (SPECS.md, section 3.7).
+// (FORMATS.md, section 3.7).
 static int apply_face_shape(AvatarPart *head, uint32_t record)
 {
 	uint32_t size;
@@ -216,7 +216,7 @@ static int apply_face_shape(AvatarPart *head, uint32_t record)
 	return XSDK_AVATAR_OK;
 }
 
-// Each part's shape applied to the part it targets: the body's vertices under a garment (SPECS.md, section 3.7).
+// Each part's shape applied to the part it targets: the body's vertices under a garment (FORMATS.md, section 3.7).
 // The hiding is left to avatar_render.c.
 static void apply_shapes(AvatarOutfit *outfit)
 {
@@ -280,7 +280,7 @@ static int fill_head(AvatarPart *head, const XsdkAvatarDescription *d)
 	return XSDK_AVATAR_OK;
 }
 
-// The colour sources (SPECS.md, section 3.6): the skin for the body and head, the hair colour for hair, else the
+// The colour sources (FORMATS.md, section 3.6): the skin for the body and head, the hair colour for hair, else the
 // item's own; an item given none (alpha 0) takes its colour table's first entry, or without one isn't tinted.
 static void set_colors(AvatarPart *part, uint32_t slots, const uint32_t *item_colors, const XsdkAvatarDescription *d)
 {
@@ -419,7 +419,7 @@ static bool wears_hat(const AvatarOutfit *outfit)
 	return false;
 }
 
-// The stock record a hair's record links to: its variant made to sit under a hat (SPECS.md, section 3.7: "Raised
+// The stock record a hair's record links to: its variant made to sit under a hat (FORMATS.md, section 3.7: "Raised
 // Front" links to "Quiff (Hat)"). NO_RECORD if it links to none, or to something that isn't hair.
 static uint32_t hat_variant(const AvatarPart *hair)
 {
@@ -488,7 +488,7 @@ int avatar_outfit_load(AvatarOutfit *outfit, const XsdkAvatarDescription *d)
 	return outfit->part_count ? XSDK_AVATAR_OK : XSDK_AVATAR_ERROR_NOT_FOUND;
 }
 
-// A stock face feature into the description (SPECS.md, sections 3.5, 4.6), its colour into the colour it sets.
+// A stock face feature into the description (FORMATS.md, sections 3.5, 4.6), its colour into the colour it sets.
 static int describe_feature(XsdkAvatarDescription *d, uint32_t record, uint32_t mask, uint32_t argb)
 {
 	if (d->feature_count == XSDK_AVATAR_FEATURES)

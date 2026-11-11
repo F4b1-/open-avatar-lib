@@ -1,4 +1,4 @@
-// An outfit in GPU memory and its draws (avatar_runtime.h): one draw per material of each model (SPECS.md, section
+// An outfit in GPU memory and its draws (avatar_runtime.h): one draw per material of each model (FORMATS.md, section
 // 3.6), skinned on the GPU (section 4.4), through the shaders tools/gen_shaders.py makes.
 
 #include <math.h>
@@ -76,7 +76,7 @@ static struct {
 	XsdkShader vertex_shader, item_shader, head_shader;
 	XsdkShader shadow_vertex_shader, shadow_pixel_shader;
 	volatile uint32_t *shadow_quad; // SHADOW_VERTICES positions: a unit square round the origin on the ground
-	XsdkSamplerState sampler, clamp_sampler; // XSDK_AVATAR_ADDRESS_WRAP and _CLAMP (SPECS.md, section 3.6)
+	XsdkSamplerState sampler, clamp_sampler; // XSDK_AVATAR_ADDRESS_WRAP and _CLAMP (FORMATS.md, section 3.6)
 	XsdkTexture blank; // transparent black: a missing mask, decal or face layer
 	XsdkBlendState alpha_blend, no_blend; // see-through parts, by their alpha; and back to none after
 	// The light's first constants, as the pixel shaders take them; the default's until a title sets its own.
@@ -85,7 +85,7 @@ static struct {
 } renderer;
 
 // The light every avatar is drawn with (xsdk_avatar_set_light): from the upper left, in front, warm, with a cooler
-// sky and a darker ground. Chosen by eye against the system's own render (SPECS.md, section 5.3), not from data.
+// sky and a darker ground. Chosen by eye against the system's own render (FORMATS.md, section 5.3), not from data.
 static const XsdkAvatarLight default_light = {
 	.direction = { -0.45f, 0.55f, 0.70f },
 	.color = { 0.80f, 0.78f, 0.74f },
@@ -329,7 +329,7 @@ typedef struct {
 } PartBuild;
 
 // Frame 0 of a decoded texture into GPU memory: DXT blocks as stored, whose 8-in-16 endian mode xsdk's DXT formats
-// set (SPECS.md, section 3.4).
+// set (FORMATS.md, section 3.4).
 static bool upload(AvatarDrawable *d, XsdkTexture *texture, const XsdkAvatarTexture *source)
 {
 	const NTSTATUS status = xsdk_texture_create(texture, gpu_format(source), source->width, source->height, 1, false);
@@ -380,7 +380,7 @@ static void set_color(float *out, const float *rgb)
 	out[3] = 1.0f;
 }
 
-// Every frame of a face layer into GPU memory, one after another in one allocation, a texture each (SPECS.md,
+// Every frame of a face layer into GPU memory, one after another in one allocation, a texture each (FORMATS.md,
 // section 3.5): 14 for eyes and mouths, 5 for eyebrows, else 1.
 static void upload_frames(AvatarDrawable *d, uint32_t layer, const XsdkAvatarTexture *source)
 {
@@ -416,7 +416,7 @@ static void upload_frames(AvatarDrawable *d, uint32_t layer, const XsdkAvatarTex
 	d->cpu_bytes += source->frame_count * (uint32_t)sizeof *frames;
 }
 
-// Which half of the face a Head material draws: its meshes' side of x = 0, +x the avatar's left (SPECS.md, 4.4).
+// Which half of the face a Head material draws: its meshes' side of x = 0, +x the avatar's left (FORMATS.md, 4.4).
 static uint32_t side_of(const XsdkAvatarModel *model, uint32_t material)
 {
 	float sum = 0.0f;
@@ -427,7 +427,7 @@ static uint32_t side_of(const XsdkAvatarModel *model, uint32_t material)
 	return sum >= 0.0f ? 0 : 1;
 }
 
-// The Head's draws: slot k samples with the UV set its binding names (SPECS.md, section 3.6), from the face layers,
+// The Head's draws: slot k samples with the UV set its binding names (FORMATS.md, section 3.6), from the face layers,
 // uploaded once for both its halves; draws pick the frames.
 static void setup_head(PartBuild *b, AvatarDraw *draw, uint32_t material, uint32_t *uv_sets)
 {

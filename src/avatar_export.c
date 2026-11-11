@@ -1,4 +1,4 @@
-// A rig to animate (avatar.h, SPECS.md section 4.9): an avatar's skeleton and parts as a glTF binary, made on the
+// A rig to animate (avatar.h, FORMATS.md section 4.9): an avatar's skeleton and parts as a glTF binary, made on the
 // console from its own files, as the avatar layer loads them. No GPU: tests/outfit_check.c runs it on the PC too.
 //
 // The skeleton is the library's 71 bones in its order and tree, in the T-pose with every rest rotation the identity,
@@ -36,7 +36,7 @@ enum {
 	BUFFER_FIRST_CAPACITY = 4096,
 };
 
-// 360sona's names (SPECS.md, section 4.7), as tools/anim_convert.py's HUMANOID table reads them; NULL: "shape_NN".
+// 360sona's names (FORMATS.md, section 4.7), as tools/anim_convert.py's HUMANOID table reads them; NULL: "shape_NN".
 static const char *const bone_names[XSDK_AVATAR_BONES] = {
 	[0] = "Hips",
 	[1] = "Spine",

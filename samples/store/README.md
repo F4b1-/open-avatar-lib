@@ -58,7 +58,7 @@ Build with `./build.sh` at the top of the project:
 Every `.xaan` file in an `Animations` folder next to `store.xex` (up to four) joins the emote wheel after the stock
 emotes, named after its file (capital letters, up to nine). Picking it plays it once, then the avatar stands again.
 Its root motion is moved onto your avatar's skeleton (`xsdk_avatar_animation_load` with the skeleton), as is right
-for animations made in Blender on a 360sona rig (SPECS.md, section 4.8).
+for animations made in Blender on a 360sona rig (FORMATS.md, section 4.8).
 
 From Blender to the console:
 

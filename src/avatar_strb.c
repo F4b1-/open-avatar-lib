@@ -1,4 +1,4 @@
-// STRB files (SPECS.md, section 3.1): the container every avatar asset is, a list of blocks by id; and the LZX chunks
+// STRB files (FORMATS.md, section 3.1): the container every avatar asset is, a list of blocks by id; and the LZX chunks
 // model and texture blocks are compressed in (section 3.2). Builds for the PC.
 
 #include <stdlib.h>

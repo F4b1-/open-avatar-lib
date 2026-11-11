@@ -1,5 +1,5 @@
 // PC test of the animation pipeline (tools/anim_convert.py, xsdk_avatar_animation_load): an animation converted from
-// a glTF export that holds a stock one (360sona's "Hooray!" is "Animation Generic Celebration", SPECS.md, section
+// a glTF export that holds a stock one (360sona's "Hooray!" is "Animation Generic Celebration", FORMATS.md, section
 // 4.7) must play as the stock one does, decoded from the console's own pack (section 4.5).
 //   anim_check <FFFE07DF00000002> <converted.xaan> "<stock animation name>"
 // Compares every bone's rotation and the root's move at 200 times through it, on the male body's skeleton. Exits 1
@@ -77,7 +77,7 @@ int main(int argc, char **argv)
 	}
 	free(strb);
 	void *bytes = read_whole(argv[2], &size);
-	// 360sona put the stock root moves on its rig unchanged, as if its root pivot were ours (SPECS.md, section 4.8): its
+	// 360sona put the stock root moves on its rig unchanged, as if its root pivot were ours (FORMATS.md, section 4.8): its
 	// stock animations compare as they are, without moving them onto this skeleton's pivot (NULL).
 	const int loaded = bytes ? xsdk_avatar_animation_load(&converted, bytes, size, NULL) : -1;
 	XsdkAvatarAnimation rebased;

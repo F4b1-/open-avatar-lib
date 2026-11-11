@@ -1,4 +1,4 @@
-// A profile's avatar description (SPECS.md, section 4.6): layout from All-Stars Avatar's avatar_desc.py (MIT),
+// A profile's avatar description (FORMATS.md, section 4.6): layout from All-Stars Avatar's avatar_desc.py (MIT),
 // checked on the user's profile. Big-endian throughout. Builds for the PC.
 
 #include <string.h>

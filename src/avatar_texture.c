@@ -1,4 +1,4 @@
-// Textures (SPECS.md, sections 3.4 and 3.5): a texture header and its pixels, and texture blocks (STRB block 2),
+// Textures (FORMATS.md, sections 3.4 and 3.5): a texture header and its pixels, and texture blocks (STRB block 2),
 // which hold the face features' textures (eyes, eyebrows, mouths). Builds for the PC.
 
 #include <stdlib.h>

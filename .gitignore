@@ -60,3 +60,6 @@ __pycache__/
 *.model
 build/
 test_runs/
+
+# The working notes: local, with the decisions and milestone log (FORMATS.md and EVIDENCE.md are the public part)
+NOTES.md

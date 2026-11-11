@@ -1,4 +1,4 @@
-// Skeletons and poses (SPECS.md, sections 4.4 and 4.5): the avatar's derived skeleton, props' skeleton blocks, and
+// Skeletons and poses (FORMATS.md, sections 4.4 and 4.5): the avatar's derived skeleton, props' skeleton blocks, and
 // the skin matrices of a pose. Builds for the PC.
 
 #include <math.h>
@@ -18,7 +18,7 @@ enum {
 	QUANTISED_BYTES = (AVATAR_QUANTISED_BITS + 7) / 8,
 };
 
-// The avatar's parents (SPECS.md, section 4.4): the named bones by anatomy, the unnamed ones by where their skin sits;
+// The avatar's parents (FORMATS.md, section 4.4): the named bones by anatomy, the unnamed ones by where their skin sits;
 // the table keeps the XNA reference's rule that bones are sorted by depth.
 static const uint8_t avatar_parents[XSDK_AVATAR_BONES] = {
 	XSDK_AVATAR_NO_PARENT,
@@ -177,7 +177,7 @@ int xsdk_avatar_skeleton_decode(XsdkAvatarSkeleton *skeleton, const void *strb, 
 	if (at + (uint64_t)bone_bits * count > (uint64_t)bytes * 8)
 		return XSDK_AVATAR_ERROR_FORMAT;
 	// Per bone: its parent (below it; the root's none), its rest position, its rest orientation as a quaternion's
-	// logarithm (SPECS.md, 4.4).
+	// logarithm (FORMATS.md, 4.4).
 	skeleton->bone_count = count;
 	for (uint32_t b = 0; b < count; b++) {
 		const uint32_t parent = avatar_stream_bits(block, at, PARENT_BITS);

@@ -8,7 +8,7 @@ import sys,struct,zlib
 HEADER=33
 
 def header(d):
-    """The 33-byte header, little-endian. Field names are inferred (see SPECS.md 3.4)."""
+    """The 33-byte header, little-endian. Field names are inferred (see FORMATS.md 3.4)."""
     fmt=d[0]; flags=d[1]; tag=struct.unpack_from('<H',d,2)[0]
     w,h,total,frame,count,unk,pitch=struct.unpack_from('<7I',d,4)
     return dict(fmt=fmt,flags=flags,tag=tag,width=w,height=h,total=total,frame=frame,count=count,unk=unk,pitch=pitch,

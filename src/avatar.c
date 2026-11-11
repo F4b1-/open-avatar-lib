@@ -35,7 +35,7 @@ static const uint32_t seed_step = 0x9E3779B9u;
 static const float talk_step_seconds = 0.1f;
 static const float talk_silent = 0.05f; // levels below this are silence
 
-// Lip-sync shapes by how open they are (the pictures, SPECS.md, section 3.5): quiet, middle and loud speech.
+// Lip-sync shapes by how open they are (the pictures, FORMATS.md, section 3.5): quiet, middle and loud speech.
 enum { TALK_LEVELS = 3, TALK_SHAPES = 3 };
 static const uint8_t talk_shapes[TALK_LEVELS][TALK_SHAPES] = {
 	{ XSDK_AVATAR_MOUTH_FV, XSDK_AVATAR_MOUTH_W, XSDK_AVATAR_MOUTH_DTH },

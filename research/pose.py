@@ -1,5 +1,5 @@
 """Pose a prop that carries its own skeleton (block 5) through an animation's prop part and draw side views
-(SPECS.md 4.4, 4.5). Checks the skeleton and animation conventions on the sheep and teddy bear.
+(FORMATS.md 4.4, 4.5). Checks the skeleton and animation conventions on the sheep and teddy bear.
 
   python3 -I pose.py <prop .bin> <animation .bin> <out.png> [frame,frame,...]
 

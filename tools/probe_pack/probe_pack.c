@@ -1,4 +1,4 @@
-// Copies the system's avatar asset pack off the console, where FTP can't open it (SPECS.md, section 4.3).
+// Copies the system's avatar asset pack off the console, where FTP can't open it (FORMATS.md, section 4.3).
 //
 // 1. Opens the package FFFE07DF00000002 on the system extended partition, sharing everything, and copies it to
 //    game:\FFFE07DF00000002.

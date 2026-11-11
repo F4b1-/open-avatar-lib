@@ -1,6 +1,6 @@
 """Shape override blocks (id 4): the hiding part, and the link from stock items to their hiding templates.
 
-Block 4, little-endian (SPECS.md, section 3.7):
+Block 4, little-endian (FORMATS.md, section 3.7):
   u32 n, u32 the target model's index bytes (its header word 4), the target's 16-byte stock id (u32 mask, u16 record,
   u16 gender, the stock tail), u32 0, u32 w, then n triangle numbers of w bits each, LSB first: the target's
   triangles to hide. Then the vertex overrides (overrides(): a byte offset into the target's unpacked vertices and a

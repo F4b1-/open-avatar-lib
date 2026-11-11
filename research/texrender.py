@@ -2,8 +2,8 @@
 
 Usage: python3 -I texrender.py <out.png> <AvatarAssetPack.toc> <manifest.bin>
 
-Takes the stock items of the description's second item list (the outfit; SPECS.md 4.6) and its face features.
-Colour rules (SPECS.md 3.5): clothes, hair and body lerp(base, mask.r*C1 + mask.g*C2 + mask.b*C3, mask.a), then the
+Takes the stock items of the description's second item list (the outfit; FORMATS.md 4.6) and its face features.
+Colour rules (FORMATS.md 3.5): clothes, hair and body lerp(base, mask.r*C1 + mask.g*C2 + mask.b*C3, mask.a), then the
 decal over it by its alpha; the Head's six layers r*colour + g*white + b*skin, blended by alpha, in slot order.
 """
 import sys,os,struct,math,zlib

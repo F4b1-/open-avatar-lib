@@ -170,7 +170,7 @@ static inline int32_t avatar_signed_bits(uint32_t word, uint32_t shift, uint32_t
 }
 
 // `width` bits (0-32) of a bit stream at bit `at`, least significant bit first: bit k of the stream is bit k % 8 of
-// byte k / 8. The model, skeleton and animation blocks all store their quantised values this way (SPECS.md, sections
+// byte k / 8. The model, skeleton and animation blocks all store their quantised values this way (FORMATS.md, sections
 // 3.3, 4.4 and 4.5). Reads only the bytes the field covers; the caller checks they are in the buffer.
 static inline uint32_t avatar_stream_bits(const uint8_t *data, uint64_t at, uint32_t width)
 {
@@ -208,7 +208,7 @@ static inline uint32_t avatar_round_up(uint32_t value, uint32_t multiple)
 	return (value + multiple - 1) & ~(multiple - 1);
 }
 
-// ---- Quantised values (SPECS.md, sections 3.3, 4.4, 4.5) ----
+// ---- Quantised values (FORMATS.md, sections 3.3, 4.4, 4.5) ----
 //
 // Mesh positions, skeleton blocks and animation channels store numbers as min + q * step * k: an unsigned integer q
 // of some bits, a float minimum and step, and a per-axis scale k (x, y, z), the same everywhere. The step is the same
@@ -280,12 +280,12 @@ extern uint32_t avatar_alloc_fail_at;
 
 // ---- LZX (avatar_lzx.c) ----
 
-// Expands one LZX chunk (SPECS.md, section 3.2) into exactly out_bytes; 0 or an XSDK_AVATAR_ERROR_*.
+// Expands one LZX chunk (FORMATS.md, section 3.2) into exactly out_bytes; 0 or an XSDK_AVATAR_ERROR_*.
 int avatar_lzx_expand(const uint8_t *in, uint32_t in_bytes, uint8_t *out, uint32_t out_bytes);
 
 // ---- STRB files (avatar_strb.c) ----
 
-// STRB block ids (SPECS.md, section 3.1).
+// STRB block ids (FORMATS.md, section 3.1).
 enum {
 	AVATAR_BLOCK_ANIMATION = 1,
 	AVATAR_BLOCK_TEXTURE = 2,
@@ -301,7 +301,7 @@ int avatar_find_block(const uint8_t *file, uint32_t size, uint32_t id, const uin
 // Expands a model or texture block's LZX chunks (section 3.2) into *out, malloc'd for the caller to free.
 int avatar_expand_block(const uint8_t *block, uint32_t block_bytes, uint8_t **out, uint32_t *out_bytes);
 
-// ---- Packed vertices (avatar_model.c), as meshes and shape overrides store them (SPECS.md, sections 3.3, 3.7) ----
+// ---- Packed vertices (avatar_model.c), as meshes and shape overrides store them (FORMATS.md, sections 3.3, 3.7) ----
 //
 // A float header (f32 step, f32 minimum per axis), then a bit stream: each position axis's width (6 bits x 3), then
 // for each of four elements a u32 base and a u32 width. A vertex is then its quantised position (min + q * step * k)
@@ -336,7 +336,7 @@ void avatar_decode_vertex(const uint8_t *data, uint64_t *at, const AvatarVertexF
 
 enum { AVATAR_TEXTURE_HEADER_BYTES = 33 };
 
-// Reads a 33-byte texture header (SPECS.md, section 3.4) into texture (no pixels yet); *empty gets whether it is an
+// Reads a 33-byte texture header (FORMATS.md, section 3.4) into texture (no pixels yet); *empty gets whether it is an
 // empty slot, whose pixels the Head's face features fill at run time.
 int avatar_parse_texture_header(const uint8_t *header, XsdkAvatarTexture *texture, bool *empty);
 // Copies the texture's pixels (frame_count * frame_bytes) from data[at], within bytes, into texture->data.

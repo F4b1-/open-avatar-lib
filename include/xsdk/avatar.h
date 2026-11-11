@@ -3,7 +3,7 @@
 
 // Xbox 360 avatars for xsdk titles, in three layers (GOALS.md, section 5), from the bottom up:
 // - the asset layer: the system's stock pack, item files, descriptions, models, textures, skeletons and animations
-//   decoded into plain structs (SPECS.md, sections 3 and 4). Plain C17 that builds for the PC too; it reads through
+//   decoded into plain structs (FORMATS.md, sections 3 and 4). Plain C17 that builds for the PC too; it reads through
 //   a callback and allocates with malloc;
 // - the animation layer: poses, blending, skin matrices and a player that turns animations into poses (PC too);
 // - the avatar layer (XsdkAvatar, console only): load an avatar, play animations, draw it in the title's own pass.
@@ -68,7 +68,7 @@ int xsdk_avatar_pack_read_asset(const XsdkAvatarPack *pack, uint32_t index, void
 int xsdk_avatar_package_read_file(
 	XsdkAvatarRead read, void *context, const char *name, void **data, uint32_t *size_bytes);
 
-// A profile's avatar description (SPECS.md, section 4.6): what XamAvatarGetManifestLocalUser fills in.
+// A profile's avatar description (FORMATS.md, section 4.6): what XamAvatarGetManifestLocalUser fills in.
 enum {
 	XSDK_AVATAR_DESCRIPTION_BYTES = 1000,
 	XSDK_AVATAR_FEATURES = 15,
@@ -98,7 +98,7 @@ typedef struct {
 } XsdkAvatarItem;
 
 typedef struct {
-	float height; // inferred meanings (SPECS.md, section 4.6)
+	float height; // inferred meanings (FORMATS.md, section 4.6)
 	float weight;
 	uint32_t feature_count;
 	uint8_t features[XSDK_AVATAR_FEATURES][XSDK_AVATAR_ID_BYTES];
@@ -118,11 +118,11 @@ int xsdk_avatar_description_parse(XsdkAvatarDescription *description, const void
 bool xsdk_avatar_id_is_stock(const uint8_t *id, uint32_t *record);
 // An item's package file name: its id as 32 upper-case hex digits; title_id gets the title it belongs to.
 void xsdk_avatar_id_package_name(const uint8_t *id, char name[33], uint32_t *title_id);
-// The stock id of the asset a pack record links to (SPECS.md, section 3.7): for clothes, the body template that hides
+// The stock id of the asset a pack record links to (FORMATS.md, section 3.7): for clothes, the body template that hides
 // the skin under them (its component mask XSDK_AVATAR_SLOT_TEMPLATE); for hair, its variant under a hat. False if none.
 bool xsdk_avatar_pack_link(const XsdkAvatarPack *pack, uint32_t index, uint8_t id[XSDK_AVATAR_ID_BYTES]);
 
-// Component masks: the slots an asset fills (SPECS.md, sections 4.1 and 4.6). A pack record's mask is 32 bits, an
+// Component masks: the slots an asset fills (FORMATS.md, sections 4.1 and 4.6). A pack record's mask is 32 bits, an
 // item's slots in a description its low 16 (costumes fill several: shirt, trousers and shoes, ...).
 enum {
 	XSDK_AVATAR_SLOT_HEAD = 0x1,
@@ -137,8 +137,8 @@ enum {
 	XSDK_AVATAR_SLOT_WRIST = 0x200,
 	XSDK_AVATAR_SLOT_EARRINGS = 0x400,
 	XSDK_AVATAR_SLOT_RING = 0x800,
-	XSDK_AVATAR_SLOT_PROP = 0x1000,           // carried props: left out (SPECS.md, section 6.1)
-	// Face features, pack records only (SPECS.md, sections 3.5 and 4.6): the first six fill the Head's texture
+	XSDK_AVATAR_SLOT_PROP = 0x1000,           // carried props: not drawn by the library
+	// Face features, pack records only (FORMATS.md, sections 3.5 and 4.6): the first six fill the Head's texture
 	// layers, the last three are shapes that move its vertices.
 	XSDK_AVATAR_SLOT_EYES = 0x2000,
 	XSDK_AVATAR_SLOT_EYEBROWS = 0x4000,
@@ -164,10 +164,10 @@ enum {
 uint32_t xsdk_avatar_pack_mask(const XsdkAvatarPack *pack, uint32_t index);
 // The record's gender (XSDK_AVATAR_MALE, _FEMALE or _EITHER); 0 for an empty record or an index past the end.
 uint32_t xsdk_avatar_pack_gender(const XsdkAvatarPack *pack, uint32_t index);
-// The id a description gives the record (SPECS.md, section 4.6): its mask, index and gender, then the stock tail.
+// The id a description gives the record (FORMATS.md, section 4.6): its mask, index and gender, then the stock tail.
 void xsdk_avatar_pack_stock_id(const XsdkAvatarPack *pack, uint32_t index, uint8_t id[XSDK_AVATAR_ID_BYTES]);
 
-// A shape override block (SPECS.md, section 3.7): changes to another model, the body's under a garment or the
+// A shape override block (FORMATS.md, section 3.7): changes to another model, the body's under a garment or the
 // Head's for a face shape. Two parts: triangles to leave out, and vertices to replace.
 typedef struct {
 	uint32_t target_record;      // the stock record of the model it changes: 0 MaleBody, 1 FemaleBody, 2 Head
@@ -191,7 +191,7 @@ int xsdk_avatar_shape_decode(XsdkAvatarShape *shape, const void *strb, uint32_t 
 // Frees what xsdk_avatar_shape_decode allocated and zeroes the shape.
 void xsdk_avatar_shape_free(XsdkAvatarShape *shape);
 
-// One mesh of a model, decoded: positions in metres, y up, the avatar facing +z (SPECS.md, section 3.3).
+// One mesh of a model, decoded: positions in metres, y up, the avatar facing +z (FORMATS.md, section 3.3).
 typedef struct {
 	uint32_t vertex_count;
 	float *positions; // 3 per vertex
@@ -206,7 +206,7 @@ typedef struct {
 	uint32_t material; // index into the model's materials: the part the mesh belongs to
 } XsdkAvatarMesh;
 
-// A texture (SPECS.md, sections 3.4 and 3.5): DXT blocks as stored, linear (not tiled), rows of the texture's own
+// A texture (FORMATS.md, sections 3.4 and 3.5): DXT blocks as stored, linear (not tiled), rows of the texture's own
 // width, frames one after another. Each 16-bit word is byte-swapped (the Xenos 8-in-16 endian mode: set it in the
 // texture fetch constant, or swap on the CPU). A GPU copy needs a pitch of at least 128 texels.
 enum {
@@ -223,7 +223,7 @@ typedef struct {
 	uint8_t *data;        // frame_count * frame_bytes; NULL for an empty slot (the Head's), filled from a face asset
 } XsdkAvatarTexture;
 
-// The frames of the face textures (SPECS.md, section 3.5): the same order in every style, read from the pictures.
+// The frames of the face textures (FORMATS.md, section 3.5): the same order in every style, read from the pictures.
 // The names are XNA Game Studio 4.1's (AvatarEye, AvatarEyebrow, AvatarMouth), which list the same 14, 5 and 14
 // expressions without their order. Eyes and eyebrows are drawn per half of the face, the texture's left edge at the
 // nose, so LOOK_IN looks towards the nose and LOOK_OUT towards the ear.
@@ -274,7 +274,7 @@ enum {
 	XSDK_AVATAR_MOUTH_FRAMES,
 };
 
-// A material's parameters (SPECS.md, section 3.6): texture bindings and float4 values, by id.
+// A material's parameters (FORMATS.md, section 3.6): texture bindings and float4 values, by id.
 enum {
 	XSDK_AVATAR_PARAMETER_BASE = 1,  // the base colour texture
 	XSDK_AVATAR_PARAMETER_MASK = 2,  // the tint mask: r, g, b pick custom colours 1-3, a blends them in
@@ -285,7 +285,7 @@ enum {
 	XSDK_AVATAR_NO_UV_SET = 0xFFFF,
 };
 
-// A texture binding's address mode (SPECS.md, section 3.6): checked by drawing, clamping the mode-0 face layers
+// A texture binding's address mode (FORMATS.md, section 3.6): checked by drawing, clamping the mode-0 face layers
 // (eyebrows, eyes, mouth) removes copies of them that wrapping leaves at the temples and cheeks.
 enum {
 	XSDK_AVATAR_ADDRESS_CLAMP = 0,
@@ -301,7 +301,7 @@ typedef struct {
 	float value[4];   // a float4
 } XsdkAvatarParameter;
 
-// A model is a series of parts, each a material and the meshes after it (SPECS.md, section 3.6). The part header's
+// A model is a series of parts, each a material and the meshes after it (FORMATS.md, section 3.6). The part header's
 // first word says how the part is drawn; the meanings are inferred from where each occurs in the pack.
 enum {
 	XSDK_AVATAR_TECHNIQUE_STANDARD = 0, // bodies, nearly all clothes
@@ -324,7 +324,7 @@ typedef struct {
 	XsdkAvatarTexture *textures;
 	uint32_t material_count; // one per part
 	XsdkAvatarMaterial *materials;
-	// The item's colour table (block 7, SPECS.md section 3.1): per entry its three default custom colours, ARGB, for
+	// The item's colour table (block 7, FORMATS.md section 3.1): per entry its three default custom colours, ARGB, for
 	// when a description gives none. 0 entries if it has none, or a layout not yet understood (3 in the pack).
 	uint32_t color_entry_count;
 	uint32_t (*color_entries)[3];
@@ -349,7 +349,7 @@ int xsdk_avatar_texture_decode(XsdkAvatarTexture *texture, const void *strb, uin
 // Frees the texture's pixels and zeroes the texture.
 void xsdk_avatar_texture_free(XsdkAvatarTexture *texture);
 
-// Skeletons (SPECS.md, section 4.4). No asset holds the avatar's: it is a table of this library's, derived from the
+// Skeletons (FORMATS.md, section 4.4). No asset holds the avatar's: it is a table of this library's, derived from the
 // data, with rest positions worked out from a body's skin weights. Props carry their own (block 5).
 enum {
 	XSDK_AVATAR_BONES = 71,     // the avatar's
@@ -358,7 +358,7 @@ enum {
 };
 
 // The avatar's named bones, numbered as the public XNA Game Studio 4.1 reference numbers them (AvatarBone); the
-// unnamed ones are skin helpers, twist bones and finger joints (SPECS.md, section 4.4).
+// unnamed ones are skin helpers, twist bones and finger joints (FORMATS.md, section 4.4).
 enum {
 	XSDK_AVATAR_BONE_ROOT = 0,
 	XSDK_AVATAR_BONE_BACK_LOWER = 1,
@@ -401,7 +401,7 @@ int xsdk_avatar_skeleton_build(XsdkAvatarSkeleton *skeleton, const XsdkAvatarMod
 // A prop's own skeleton, the skeleton block of its STRB file. XSDK_AVATAR_ERROR_NOT_FOUND if it has none.
 int xsdk_avatar_skeleton_decode(XsdkAvatarSkeleton *skeleton, const void *strb, uint32_t size_bytes);
 
-// One bone of a pose: a change from the rest pose in the bone's own rest frame (SPECS.md, section 4.5). The bone's
+// One bone of a pose: a change from the rest pose in the bone's own rest frame (FORMATS.md, section 4.5). The bone's
 // transform is its rest transform relative to its parent's, then translation, then rotation, then scale.
 typedef struct {
 	float translation[3];
@@ -425,7 +425,7 @@ void xsdk_avatar_skin_matrices(
 void xsdk_avatar_pose_blend(XsdkAvatarBonePose *out, const XsdkAvatarBonePose *a, const XsdkAvatarBonePose *b,
 	float weight, uint32_t bone_count);
 
-// An animation (SPECS.md, section 4.5): the animation block of a stock pack record ("Animation Generic Wave", ...),
+// An animation (FORMATS.md, section 4.5): the animation block of a stock pack record ("Animation Generic Wave", ...),
 // decoded into one bone pose per bone and frame, as changes from the rest pose (XsdkAvatarBonePose). The avatar's
 // bones only: a prop's own part (the sleep animations' sheep) is left out. 40 bytes per bone and frame: about 300 KB
 // for a five-second animation.
@@ -451,7 +451,7 @@ float xsdk_avatar_animation_length(const XsdkAvatarAnimation *animation);
 void xsdk_avatar_animation_sample(
 	const XsdkAvatarAnimation *animation, float seconds, bool loop, XsdkAvatarBonePose *pose);
 
-// An animation of the library's own (SPECS.md, section 4.8), made in a 3D program and converted by
+// An animation of the library's own (FORMATS.md, section 4.8), made in a 3D program and converted by
 // tools/anim_convert.py: from bytes the title read from its own files. Its root moves about the rig's root; given
 // the skeleton of the avatar it is for (or NULL to take the rig's as it is), that motion is moved onto this
 // skeleton's root. Free it with xsdk_avatar_animation_free; play it like any other (xsdk_avatar_player_play).
@@ -666,7 +666,7 @@ int xsdk_avatar_load_description(XsdkAvatar **avatar, const void *bytes, uint32_
 // XSDK_AVATAR_ERROR_NOT_FOUND if the pack has no part of a name given.
 int xsdk_avatar_load_stock(XsdkAvatar **avatar, const XsdkAvatarStockPart *parts, uint32_t count);
 
-// A rig to animate in a 3D program (SPECS.md, section 4.9): the avatar the three loads above give, as a glTF binary
+// A rig to animate in a 3D program (FORMATS.md, section 4.9): the avatar the three loads above give, as a glTF binary
 // (.glb) malloc'd into *glb, for the title to write to a file and free. The library's 71-bone skeleton in the T-pose
 // with every bone on the world axes, named as 360sona names them, and the avatar's parts skinned to it (what other
 // parts hide left out), each material's textures and colours baked into one PNG as the renderer mixes them (the
@@ -739,7 +739,7 @@ void xsdk_avatar_draw_shadow(const XsdkAvatar *avatar, const float view_projecti
 // Draws it in a pose of the caller's (XSDK_AVATAR_BONES bones): from a player of its own, sampled, blended, or set
 // bone by bone.
 void xsdk_avatar_draw_pose(const XsdkAvatar *avatar, const XsdkAvatarBonePose *pose, const float view_projection[16]);
-// Its skeleton, built from its body (SPECS.md, section 4.4).
+// Its skeleton, built from its body (FORMATS.md, section 4.4).
 const XsdkAvatarSkeleton *xsdk_avatar_skeleton(const XsdkAvatar *avatar);
 
 // The light every avatar is drawn with, per pixel: one light, an ambient blended from the ground's colour (surfaces

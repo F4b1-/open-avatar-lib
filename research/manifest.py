@@ -1,6 +1,6 @@
 """Decode an avatar description (1000 bytes, big-endian) and name its items from AvatarAssetPack.toc.
 
-Layout from All-Stars Avatar's avatar_desc.py (MIT; SPECS.md, section 5.1), field meanings partly inferred.
+Layout from All-Stars Avatar's avatar_desc.py (MIT; FORMATS.md, section 5.1), field meanings partly inferred.
   python3 -I manifest.py <manifest.bin> <AvatarAssetPack.toc>
 """
 import os

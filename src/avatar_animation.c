@@ -1,4 +1,4 @@
-// Animations (SPECS.md, section 4.5): the animation block decoded into bone poses, the library's own animation file
+// Animations (FORMATS.md, section 4.5): the animation block decoded into bone poses, the library's own animation file
 // loaded, animations sampled at a time, and poses blended. Builds for the PC.
 
 #include <math.h>
@@ -128,7 +128,7 @@ int xsdk_avatar_animation_decode(XsdkAvatarAnimation *animation, const void *str
 	return XSDK_AVATAR_OK;
 }
 
-// ---- The library's own animation file (SPECS.md, section 4.8), little-endian ----
+// ---- The library's own animation file (FORMATS.md, section 4.8), little-endian ----
 //
 // "XAAN", u32 version 1, u32 bones, u32 frames, f32 frames a second, f32 x 3 the rig's root pivot; then per frame
 // f32 x 3 the root's move from that pivot and per bone f32 x 4 its rotation (x, y, z, w).
@@ -168,7 +168,7 @@ static int read_file_header(const void *bytes, uint32_t size_bytes, FileHeader *
 }
 
 // A frame's root move, made relative to the playing skeleton's root instead of the rig's: a rotation about another
-// point moves the root by (R - 1)(ours - theirs) more (SPECS.md, section 4.7), so shift = ours - theirs.
+// point moves the root by (R - 1)(ours - theirs) more (FORMATS.md, section 4.7), so shift = ours - theirs.
 static void move_root_onto_skeleton(XsdkAvatarBonePose *root, const float move[3], const float shift[3])
 {
 	float turned[3];

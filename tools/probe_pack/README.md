@@ -1,7 +1,7 @@
 # probe_pack
 
 An xsdk title that copies the system's avatar asset pack off the console, where FTP can't open it
-(SPECS.md, section 4.3). It reads only; it changes nothing on the console.
+(FORMATS.md, section 4.3). It reads only; it changes nothing on the console.
 
 1. Opens `FFFE07DF00000002` on the system extended partition (`\SEP\...` and
    `\Device\Harddisk0\SystemExtPartition\...`), sharing all access, and copies it to `game:\FFFE07DF00000002`.

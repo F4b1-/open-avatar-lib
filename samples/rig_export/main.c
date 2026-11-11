@@ -1,5 +1,5 @@
 // Rig export: writes rigs to animate in Blender (or any 3D program that reads glTF) beside the .xex, from this
-// console's own files (SPECS.md, section 4.9; the README's "Making animations"):
+// console's own files (FORMATS.md, section 4.9; the README's "Making animations"):
 //   rig_male.glb, rig_female.glb  the bare body and head, male and female
 //   rig_mine.glb                  the avatar of the first profile signed in, in its clothes
 // Each holds the library's skeleton in the T-pose and the avatar's textures; tools/anim_convert.py turns an animation

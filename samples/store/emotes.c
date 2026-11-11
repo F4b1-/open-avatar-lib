@@ -83,7 +83,7 @@ static bool read_whole(const char *path, void **bytes, uint32_t *size)
 }
 
 // One animation of the player's own: made in Blender on the rig, its root turns about the rig's pivot, moved onto this
-// avatar's (SPECS.md, 4.8).
+// avatar's (FORMATS.md, 4.8).
 static void load_custom(const XsdkAvatar *avatar, const char *file)
 {
 	char path[300];

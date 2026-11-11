@@ -1,4 +1,4 @@
-"""Avatar animation block (STRB id 1): header, channel headers, frame data (SPECS.md, section 4.5).
+"""Avatar animation block (STRB id 1): header, channel headers, frame data (FORMATS.md, section 4.5).
 
 A part is a channel table and its frames. The avatar part's table starts at 0x30. Every table has 216 header slots
 (72 bones x 3), 146 bits each; the used ones list the bones backwards (slot t is bone n-1-t, three channels each:

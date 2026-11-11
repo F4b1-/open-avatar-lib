@@ -1,8 +1,8 @@
 # Goals
 
-What this library is for and who it serves. SPECS.md holds the format facts, the open questions and the milestones;
-this file says what we are building them towards. Where the two disagree, this file sets the direction and SPECS.md
-the details.
+What this library is for and who it serves. docs/FORMATS.md holds the format facts and the open questions,
+EVIDENCE.md where they come from; this file says what we are building them towards. Where the two disagree, this
+file sets the direction and FORMATS.md the details.
 
 ## 1. The purpose
 
@@ -29,7 +29,8 @@ The code itself is written to the standard of a **very ambitious hobby project**
 better documented than most homebrew, and it doesn't go as far as an engine's machinery. Concretely:
 
 - a clear module layout a newcomer can find their way around in (section 6);
-- every format fact backed by evidence (SPECS.md, section 2), every public function documented in its header;
+- every format fact backed by evidence (docs/FORMATS.md, section 2; EVIDENCE.md), every public function documented
+  in its header;
 - tests that run on the PC against the developer's own console files, plus sample titles that run on the console;
 - no clever abstraction that a reader has to unpick: plain C with plain structs, one obvious way to do each thing.
 
@@ -42,7 +43,7 @@ better documented than most homebrew, and it doesn't go as far as an engine's ma
    documented structs.
 3. **The game stays in charge.** The library draws into the game's own pass and command stream. It never owns the
    frame, the render targets, the camera or the main loop, and it documents exactly which GPU state it changes
-   (SPECS.md, section 1.3).
+   (avatar.h, at its avatar layer).
 4. **Honest errors.** Every call that can fail returns a result code the developer can act on. A missing marketplace
    item falls back to a stock part instead of failing the whole avatar, and says so.
 5. **Nothing bundled, nothing downloaded.** Every asset is read at run time from the console the game runs on. The
@@ -51,7 +52,7 @@ better documented than most homebrew, and it doesn't go as far as an engine's ma
    on it follow the same rule: they use the console's meshes, textures and stock animations, read at run time, and
    never carry copies. A game ships avatars as descriptions (item ids and colours, no art), plus its own content.
 6. **Clean-room and MIT.** No Microsoft code, XDK material or decrypted system code. It is a companion library to
-   xsdk for now (SPECS.md, section 5.4), laid out so that it could still move into xsdk as a copy.
+   xsdk for now, laid out so that it could still move into xsdk as a copy.
 
 ## 4. Features
 
@@ -67,7 +68,7 @@ better documented than most homebrew, and it doesn't go as far as an engine's ma
 | Pose it | an animation player produces a pose, and drawing takes an avatar and a pose. The simple path hides this (each avatar has its own player); a game that wants to can pose bones itself, share one player between avatars, or mix the two |
 | Place it | a world transform per avatar; several avatars per scene |
 | NPCs | avatars the game ships as description files (designed on a console or in 360sona) and loads like the player's; an item the console lacks is replaced by a stock part of the same kind, and the game is told |
-| Face | the eye and mouth expressions the textures carry; blinking on its own; talking driven by a 0-1 level the game sends (from voice or a dialogue line); and the faces the stock animations carry, if their face tracks can be decoded (SPECS.md, section 4.5, not yet known) |
+| Face | the eye and mouth expressions the textures carry; blinking on its own; talking driven by a 0-1 level the game sends (from voice or a dialogue line); and the faces the stock animations carry, if their face tracks can be decoded (docs/FORMATS.md, section 4.5, not yet known) |
 | Clean up | one call frees everything, after the game's fence says the GPU is done |
 
 ### 4.2 Wanted soon after
@@ -87,14 +88,14 @@ better documented than most homebrew, and it doesn't go as far as an engine's ma
 ### 4.3 Later, if there is demand
 
 - Avatar props: the carried items from the marketplace and awards (component mask 0x1000), drawn on their hand bone.
-  Some bring their own skeleton and animation. Left out until then (decided 2026-11-04, SPECS.md section 6.1); a
+  Some bring their own skeleton and animation. Left out until then (decided 2026-11-04); a
   game can still attach its own props to a bone (4.2).
 - Blending more than two animations at once.
 - Face keys in custom animations (custom properties in the 3D program's export).
 - Rendering to a texture for menus and thumbnails (a helper over xsdk's render targets).
 - Level of detail for crowds.
 - A small posing sample on the console (bones set with the gamepad), as a demonstration rather than a tool.
-- Sitting (dropped from the library's own animations 2026-11-10, the user's decision): a sit fits only one seat's
+- Sitting (dropped from the library's own animations 2026-11-10): a sit fits only one seat's
   height and depth, needs sitting down, a sitting idle and standing up, and the avatar lined up with the seat first;
   one shipped clip would float or sink on most games' furniture. A game makes its own for its own seats through 4.5
   (rig export, Blender, converter), or holds a still pose (4.2). Worth it in the library only with seat fitting at
@@ -119,10 +120,10 @@ the console through a PC tool:
 1. **A rig to animate.** A glTF file with the avatar's 71-bone skeleton, readable bone names and a body to look at,
    in the T-pose. Two sources:
    - a 360sona export (rigged, with numbered or humanoid bone names), if its rig matches the library's skeleton;
-     to be checked against SPECS.md, section 4.4, before anything relies on it;
+     to be checked against docs/FORMATS.md, section 4.4, before anything relies on it;
    - our own rig exporter, which runs on the console and builds the file from its own files (the stock pack, and
      the developer's avatar in its clothes), so the workflow doesn't depend on a website (built 2026-11-08,
-     SPECS.md section 4.9).
+     docs/FORMATS.md, section 4.9).
 2. **Animate** in the 3D program as usual, and export glTF.
 3. **Convert**: a PC tool reads the glTF, matches its bones to the library's by name or number, resamples the motion
    and writes the library's own animation format.
@@ -132,8 +133,8 @@ the console through a PC tool:
 Decided (2026-11-06):
 
 - **The library's own animation format**, small and documented, rather than the console's animation block, whose
-  last sections aren't decoded (SPECS.md, section 4.5). Writing the console's format could come later.
-- **The PC tools in Python, standard library only** (changed 2026-11-06, the user: "use python, no third party outside
+  last sections aren't decoded (docs/FORMATS.md, section 4.5). Writing the console's format could come later.
+- **The PC tools in Python, standard library only** (changed 2026-11-06: "use python, no third party outside
   of the xsdk"; first planned with cgltf): reading a GLB is a JSON chunk and a binary one, a few dozen lines, and
   xsdk's own host tools are Python of the same kind. No third-party code in the project.
 
@@ -147,8 +148,8 @@ layers it over the stock one at run time (4.2, additive layers).
 Three layers, all public:
 
 - **The avatar layer** (`xsdk_avatar_*` on an `XsdkAvatar`): what nearly every game uses. Load, play, update,
-  draw, close; light, face and look-at helpers. C, called from C and C++ titles alike (`samples/hello` is C++); the
-  C++ wrapper of the first plan was removed on 2026-11-10 (SPECS.md, section 1.3).
+  draw, close; light, face and look-at helpers. C, called from C and C++ titles alike; the C++
+  wrapper of the first plan was removed on 2026-11-10.
 - **The animation layer**: what ambitious games and tools use. The skeleton; animations, stock or custom, and the
   list of stock ones; sampling an animation at a time into a pose; blending two poses with a weight and a bone mask;
   a pose's skin matrices and bone transforms; drawing an avatar with any pose. Its first parts exist since milestone
@@ -156,7 +157,7 @@ Three layers, all public:
 - **The asset layer** (the pack, descriptions, models, textures, skeleton blocks, animation blocks): plain structs,
   decoded once, no GPU involved. It exists for everything but animations.
 
-The avatar layer should read like this (names to be settled; SPECS.md, section 1):
+The avatar layer should read like this (as avatar.h has it now):
 
 ```c
 XsdkAvatar *avatar;
@@ -183,11 +184,11 @@ xsdk_avatar_draw_pose(avatar, &pose, &view_projection);
 ```
 
 The test of the interface: a developer who has never seen the library gets an animated avatar on screen from
-the README and one sample, without opening SPECS.md.
+the README and one sample, without opening docs/FORMATS.md.
 
 ## 6. Code layout
 
-Laid out as xsdk is, so the library could move into xsdk as a copy (SPECS.md, section 1.3):
+Laid out as xsdk is, so the library could move into xsdk as a copy:
 
 ```
 include/xsdk/avatar.h      the C interface: the avatar layer, the animation layer, the asset layer
@@ -197,13 +198,13 @@ tools/                     console probes, the shader generator, and the PC anim
                            exporter)
 samples/                   small titles that show one thing each: show an avatar, animate it, several avatars,
                            a custom animation
-research/                  the Python prototypes behind SPECS.md (not part of the library)
+research/                  the Python prototypes behind docs/FORMATS.md (not part of the library)
 docs/ or README.md         getting started, the interface, the GPU state the library touches, making animations
 ```
 
 Rules that keep it readable: the asset layer never touches the GPU; only the draw code does. Every source file
-starts with what it does and where its format is described in SPECS.md. Every format fact, including those taken
-from public reverse engineering, is cited in SPECS.md.
+starts with what it does and where its format is described in docs/FORMATS.md. Every format fact, including those taken
+from public reverse engineering, is cited in docs/FORMATS.md, its source named in EVIDENCE.md.
 
 ## 7. When it is done
 
@@ -212,24 +213,5 @@ The first release is done when:
 1. the features of section 4.1 work on the console with the developer's own avatar and with stock-only avatars;
 2. the samples build and run, and a reader can follow each in a few minutes;
 3. the README gets a newcomer from nothing to an animated avatar;
-4. the PC tests pass on the user's console files;
+4. the PC tests pass on one's own console files;
 5. it builds as a companion library beside xsdk, laid out so that a later move into xsdk stays a copy.
-
-## 8. Where we are (2026-11-06, night)
-
-- Done: reading the stock pack, item packages and the description; decoding meshes, textures and materials (C, tested
-  against the prototypes on the whole pack); the textured, coloured avatar (milestone 5); the skeleton and skinning
-  on the GPU (6); stock animations played, looped and cross-faded (7); the avatar layer of section 5 with several
-  avatars and NPCs, the C++ wrapper (removed 2026-11-10), the README and samples (8); the face: expressions, blinking, talking (9). All
-  confirmed on the console, the last with `samples/store`.
-- Built along the way, confirmed with the store: per-pixel lighting with a light the title sets, anti-aliasing in
-  bands, a walk made in code (`xsdk_avatar_animation_walk`, standing in until milestone 11, removed 2026-11-10),
-  stock avatars with faces, and `samples/store`: walk round the Avatar Thrift Store among NPCs, emote from a wheel,
-  snow falling outside the window.
-- Next: custom animations (milestone 10, section 4.5), then the library's own walk, run and jump (11). A first
-  check for 4.5: compare a 360sona export's rig with the library's skeleton. Left open from milestone 9: whether the
-  stock animations carry face keys (SPECS.md, section 5.5).
-- Not yet in the avatar layer, from 4.1: the loading state (loads are synchronous), and the stock animations'
-  lengths in the list (names only).
-- Known limits today: every avatar has the same height; a missing accessory is left out, not replaced; where a
-  console without a hard drive keeps the stock pack is not yet known (SPECS.md, section 5.1).

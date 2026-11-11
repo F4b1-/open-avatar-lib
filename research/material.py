@@ -30,7 +30,7 @@ def materials(m):
 def parts(m):
     """[(technique, records, mesh count)]: a model is a series of parts, each a 33-byte header (its first word the
     technique) and 24-byte records, then its meshes; the first part's header is at 0x30, a later part's fills the gap
-    before its first mesh (SPECS.md, section 3.6)."""
+    before its first mesh (FORMATS.md, section 3.6)."""
     from mesh import mesh_at
     out=[]; q=m.find(STEP)-4; header=0x30; first=q; meshes=0
     while q>=0:

@@ -1,4 +1,4 @@
-// PC test of the error paths when memory runs out (SPECS.md, section 6.2, refactoring step 3): every load and decode
+// PC test of the error paths when memory runs out (every allocation through avatar_alloc.c): every load and decode
 // of the asset layer, run with its 1st, 2nd, 3rd, ... heap allocation made to fail (avatar_alloc_fail_at), until a
 // run makes no allocation fail. Each failed run must return XSDK_AVATAR_ERROR_MEMORY, leave its struct empty, and
 // leak and double-free nothing: build.sh pc builds this test with AddressSanitizer, which ends it on either.

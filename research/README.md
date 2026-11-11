@@ -1,6 +1,6 @@
 # research
 
-Python prototypes behind SPECS.md sections 3 and 4 (Python 3, standard library only; run them in WSL). Our own code; no third-party code copied.
+Python prototypes behind FORMATS.md sections 3 and 4 (Python 3, standard library only; run them in WSL). Our own code; no third-party code copied.
 They need your own `asset_v2.bin` files (extract with Avatar Thrift Store's `avtool extract <package> asset_v2.bin <out>`);
 never put asset files or their outputs in this repository.
 

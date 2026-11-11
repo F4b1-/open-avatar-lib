@@ -31,7 +31,7 @@ void avatar_content_close(void);
 
 enum {
 	AVATAR_MAX_PARTS = 24,
-	AVATAR_HEAD_LAYERS = 6, // the Head's texture slots (SPECS.md, section 3.5)
+	AVATAR_HEAD_LAYERS = 6, // the Head's texture slots (FORMATS.md, section 3.5)
 };
 
 typedef struct {
@@ -40,9 +40,9 @@ typedef struct {
 	// The stock record it came from (MaleBody 0, FemaleBody 1, Head 2, ...), or UINT32_MAX for an item package.
 	uint32_t record;
 	uint32_t slots; // the slots the description's item fills (XSDK_AVATAR_SLOT_*)
-	// What it changes on another part: triangles to hide and vertices to move (SPECS.md, section 3.7).
+	// What it changes on another part: triangles to hide and vertices to move (FORMATS.md, section 3.7).
 	XsdkAvatarShape shape;
-	// False when it has neither custom colours nor a colour table: its mask is left out (SPECS.md, section 3.6).
+	// False when it has neither custom colours nor a colour table: its mask is left out (FORMATS.md, section 3.6).
 	bool tinted;
 	float colors[3][3]; // custom colours 1-3, 0-1 RGB
 	// The Head: its face layers (data NULL where none), per layer the colours of its red, green and blue, the skin.
@@ -68,13 +68,13 @@ int avatar_outfit_load(AvatarOutfit *outfit, const XsdkAvatarDescription *descri
 // A description of stock parts, with a plain face.
 int avatar_outfit_describe_stock(
 	XsdkAvatarDescription *description, const XsdkAvatarStockPart *parts, uint32_t count);
-// Marks the triangles of part that the outfit's other parts hide (SPECS.md, section 3.7), numbered across its meshes:
+// Marks the triangles of part that the outfit's other parts hide (FORMATS.md, section 3.7), numbered across its meshes:
 // a byte per triangle, 1 if hidden. The renderer and the export leave them out.
 void avatar_outfit_hidden(const AvatarOutfit *outfit, const AvatarPart *part, uint8_t *hidden, uint32_t triangles);
 // Frees every part's model, shape and face layers, and empties the outfit (the struct itself is the caller's).
 void avatar_outfit_free(AvatarOutfit *outfit);
 
-// ---- avatar_export.c: an outfit as a rig to animate (SPECS.md, section 4.9); no GPU ----
+// ---- avatar_export.c: an outfit as a rig to animate (FORMATS.md, section 4.9); no GPU ----
 
 // The outfit's skeleton and parts as a glTF binary, malloc'd into *glb.
 int avatar_export_outfit(const AvatarOutfit *outfit, void **glb, uint32_t *size_bytes);
@@ -105,7 +105,7 @@ enum {
 };
 
 enum {
-	// The Head's layers that animate (SPECS.md, section 3.5), and its halves.
+	// The Head's layers that animate (FORMATS.md, section 3.5), and its halves.
 	AVATAR_LAYER_EYEBROWS = 2,
 	AVATAR_LAYER_EYES = 3,
 	AVATAR_LAYER_MOUTH = 4,

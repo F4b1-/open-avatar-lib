@@ -1,4 +1,4 @@
-// LZX as avatar assets use it (SPECS.md, section 3.2): each chunk a stream of its own with a 32 KB window, its own
+// LZX as avatar assets use it (FORMATS.md, section 3.2): each chunk a stream of its own with a 32 KB window, its own
 // header, Huffman lengths and repeated offsets; 16-bit little-endian words read most significant bit first.
 // Written from the public description of LZX (libmspack's lzxd.c documents the same algorithm; no code taken).
 //
@@ -356,7 +356,7 @@ int avatar_lzx_expand(const uint8_t *in, uint32_t in_bytes, uint8_t *out, uint32
 	for (uint32_t i = 0; i < REPEATED_OFFSETS; i++)
 		d->repeats[i] = 1;
 	if (read_bits(&d->bits, 1))
-		return XSDK_AVATAR_ERROR_UNSUPPORTED; // E8 translation; never set in the assets seen (SPECS.md, 3.2)
+		return XSDK_AVATAR_ERROR_UNSUPPORTED; // E8 translation; never set in the assets seen (FORMATS.md, 3.2)
 
 	uint32_t produced = 0;
 	while (produced < out_bytes) {

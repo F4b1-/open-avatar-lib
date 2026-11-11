@@ -1,6 +1,6 @@
-// Baking a part's material into one picture for the rig export (avatar_export.c, SPECS.md section 4.9): the
+// Baking a part's material into one picture for the rig export (avatar_export.c, FORMATS.md section 4.9): the
 // textures the renderer mixes per pixel (avatar_render.c, tools/gen_shaders.py) mixed once on the CPU, in the base
-// texture's coordinates. Every material samples its textures with texture coordinate sets of their own (SPECS.md,
+// texture's coordinates. Every material samples its textures with texture coordinate sets of their own (FORMATS.md,
 // section 3.6), so the bake draws the material's triangles into the picture and, inside each, finds where the other
 // textures are sampled by interpolating their sets. No GPU: runs on the PC too.
 
@@ -22,7 +22,7 @@ enum {
 	ITEM_DECAL = 2,
 	ITEM_LAYERS = 3,
 
-	// DXT (SPECS.md, section 3.4): 4x4 texel blocks, DXT1 8 bytes (two RGB565 colours, then 16 2-bit indices), DXT5
+	// DXT (FORMATS.md, section 3.4): 4x4 texel blocks, DXT1 8 bytes (two RGB565 colours, then 16 2-bit indices), DXT5
 	// 16 (two alphas and 16 3-bit indices first). The textures store each 16-bit word byte-swapped (8-in-16).
 	BLOCK_SIDE = 4,
 	BLOCK_TEXELS = BLOCK_SIDE * BLOCK_SIDE,
@@ -204,7 +204,7 @@ static void mix3(float *c, const float *to, float amount)
 		c[k] += (to[k] - c[k]) * amount;
 }
 
-// The colour at a point of a triangle, its three vertices weighted by b: the renderer's mixing (SPECS.md, 3.6).
+// The colour at a point of a triangle, its three vertices weighted by b: the renderer's mixing (FORMATS.md, 3.6).
 static void shade(const AvatarPart *part, const Layers *ls, const XsdkAvatarMesh *mesh, const uint32_t *v,
 	const float *b, bool see_through, float out[4])
 {

@@ -1,5 +1,5 @@
 // The library's own animations (avatar.h, xsdk_avatar_animation_load_walk and _load_jump; milestone 11): a clip per
-// body, keyed in Blender on our rig and converted by tools/anim_convert.py (SPECS.md, section 6.2, item 11),
+// body, keyed in Blender on our rig and converted by tools/anim_convert.py (FORMATS.md, section 4.8),
 // embedded from animations/*.xaan by tools/gen_clips.py. And the walking speed of any walk clip
 // (xsdk_avatar_animation_ground_speed), from its feet while they are on the floor. Builds for the PC.
 

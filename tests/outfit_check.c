@@ -178,7 +178,7 @@ static const char *hair_of(XsdkAvatarDescription *d, AvatarOutfit *outfit, const
 	return label;
 }
 
-// Hair under a hat (SPECS.md, section 3.7; test run 9): with a hat on, the hair is its hat variant, which the pack
+// Hair under a hat (FORMATS.md, section 3.7; test run 9): with a hat on, the hair is its hat variant, which the pack
 // record links to ("Raised Front" -> "Quiff (Hat)"); without one, the hair itself.
 static int check_hat(XsdkAvatarDescription *d, AvatarOutfit *outfit)
 {

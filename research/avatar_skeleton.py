@@ -1,4 +1,4 @@
-"""The avatar's skeleton, derived (SPECS.md 4.4): no block holds it, so it is built from what the data gives and
+"""The avatar's skeleton, derived (FORMATS.md 4.4): no block holds it, so it is built from what the data gives and
 checked by posing a body through stock animations.
 
 - Parents: the public XNA bone names (AvatarBone, 55 of 71) and its rule "bone indices are sorted by depth", the

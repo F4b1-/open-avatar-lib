@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Embed the library's own animations (animations/*.xaan, SPECS.md section 4.8) in the library: prints a C header with
+"""Embed the library's own animations (animations/*.xaan, FORMATS.md section 4.8) in the library: prints a C header with
 each file's bytes as an array, for src/avatar_walk_clip.c. Python 3 standard library only, as xsdk's host tools.
 
   python3 gen_clips.py <animations folder> > avatar_clips.h

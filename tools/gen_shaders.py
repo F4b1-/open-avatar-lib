@@ -9,15 +9,15 @@ registers, the first register of its push constants, and the fetch constant slot
   python3 gen_shaders.py <xsdk checkout> <work dir> > avatar_shaders.h     (in WSL; the work dir on a Windows drive,
                                                                             as glslang is xost's Windows build)
 
-The shaders follow SPECS.md, section 3.6:
+The shaders follow FORMATS.md, section 3.6:
 - avatar_vertex: positions and normals skinned (four bones a vertex, each bone's 3x4 matrix in the push constants,
-  read at the vertex's bone index; SPECS.md, section 4.4), then through the mvp matrix, the normal turned by the
+  read at the vertex's bone index; FORMATS.md, section 4.4), then through the mvp matrix, the normal turned by the
   world matrix into world space for the pixel shaders, six texture coordinate sets passed on (the Head uses six;
   items three, in base, mask, decal order);
 - avatar_item_pixel: lerp(base, mask.r * C1 + mask.g * C2 + mask.b * C3, mask.a), then the decal by its alpha, or
-  a reflection map looked up from the normal in view space by its strength (binding 4 of SPECS.md, inferred);
+  a reflection map looked up from the normal in view space by its strength (binding 4 of FORMATS.md, section 3.6, inferred);
 - avatar_head_pixel: the skin colour, then each of the six face layers, r * A + g * B + b * C, by its alpha;
-- both lit per pixel the same way (LIGHTING, SPECS.md section 5.3): a light wrapped round the surface, an ambient
+- both lit per pixel the same way (LIGHTING, FORMATS.md section 5.3): a light wrapped round the surface, an ambient
   blended from the ground's colour below to the sky's above, and a highlight towards the camera;
 - avatar_shadow_vertex and avatar_shadow_pixel: a soft round shadow on the ground under an avatar
   (xsdk_avatar_draw_shadow), a unit square placed and scaled, darkest at its middle.

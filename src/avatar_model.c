@@ -1,4 +1,4 @@
-// Model blocks (SPECS.md, sections 3.3, 3.5 and 3.6): STRB block 3, compressed (3.2), holding an asset's meshes,
+// Model blocks (FORMATS.md, sections 3.3, 3.5 and 3.6): STRB block 3, compressed (3.2), holding an asset's meshes,
 // its texture table and its materials; and the colour table (block 7). Also the packed vertex format meshes and
 // shape overrides (avatar_shape.c) share. Little-endian, bit streams LSB first. Builds for the PC.
 

@@ -1,4 +1,4 @@
-// Reads each signed-in profile's avatar description (1000 bytes; SPECS.md, section 5.1) two ways and logs it:
+// Reads each signed-in profile's avatar description (1000 bytes; FORMATS.md, section 5.1) two ways and logs it:
 // 1. XamAvatarGetManifestLocalUser(user, buffer, NULL);
 // 2. XamUserReadProfileSettings for XPROFILE_GAMERCARD_AVATAR_INFO_1 (0x63E80044), with title 0 and FFFE07D1.
 // Each result that comes back is also written to game:\manifest_u<user>_<method>.bin. Reads only.
@@ -68,7 +68,7 @@ static void hex_lines(const char *label, const uint8_t *data, uint32_t from, uin
 	}
 }
 
-// The fields All-Stars Avatar's avatar_desc.py found (SPECS.md, section 5.1), as hex to decode on the PC.
+// The fields All-Stars Avatar's avatar_desc.py found (FORMATS.md, section 5.1), as hex to decode on the PC.
 static void log_manifest(const uint8_t *m)
 {
 	uint32_t a, b;

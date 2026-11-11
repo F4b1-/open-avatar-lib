@@ -43,7 +43,7 @@ void main()
 }
 """
 
-# xost refuses a vector constant as a GLSL.std.450 call's operand (SPECS.md, section 6, "%154 is not a constant
+# xost refuses a vector constant as a GLSL.std.450 call's operand (found building these shaders: "%154 is not a constant
 # scalar"), so blends with a constant colour are written out as arithmetic, and bounds are scalars.
 PIXEL = """#version 450
 layout(location = 0) in vec4 v_world;

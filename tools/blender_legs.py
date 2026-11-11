@@ -1,5 +1,5 @@
 """Leg clean-up for the library's own animations, run inside Blender (5.1) on an action baked from the IK rig of
-SPECS.md section 6.2 item 11. Our own code; Blender's Python API only.
+milestone 11 (FORMATS.md, section 4.8). Our own code; Blender's Python API only.
 
   exec(open("tools/blender_legs.py").read(), ns)   # in Blender's Python (the Blender MCP, say), then:
   ns["hinge_fix"]()                 # every frame: legs re-solved as hand-keyed legs move (no twist)

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Convert an animation from a glTF binary (.glb) into the library's own animation file (SPECS.md, section 4.8),
+"""Convert an animation from a glTF binary (.glb) into the library's own animation file (FORMATS.md, section 4.8),
 for xsdk_avatar_animation_load. Python 3 standard library only, as xsdk's host tools.
 
   python3 anim_convert.py <in.glb> <out.xaan> [--animation NAME] [--fps N] [--list]
 
-The rig is the avatar's skeleton of 71 bones (SPECS.md, section 4.4): a 360sona export (section 4.7), or anything
+The rig is the avatar's skeleton of 71 bones (FORMATS.md, section 4.4): a 360sona export (section 4.7), or anything
 skinned the same way. Its joints are matched to the library's bones by their order when the skin has 71 joints whose
 parents are the library's, else by name (360sona's humanoid names, "shape_NN", or a number at the end of the name).
 
@@ -32,7 +32,7 @@ PARENTS = [-1, 0, 0, 0, 0, 1, 2, 2, 3, 3, 1, 6, 5, 6, 5, 8, 5, 8, 5, 14, 12, 11,
            25, 25, 25, 28, 28, 28, 33, 33, 33, 33, 33, 33, 33, 36, 36, 36, 36, 36, 36, 36, 37, 38, 39, 40, 43, 44, 45,
            46, 47, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60]
 
-# 360sona's humanoid names (SPECS.md, section 4.7), by the library's bone number.
+# 360sona's humanoid names (FORMATS.md, section 4.7), by the library's bone number.
 HUMANOID = {
     "Hips": 0, "Spine": 1, "LeftUpperLeg": 2, "RightUpperLeg": 3, "Chest": 5, "LeftLowerLeg": 6, "RightLowerLeg": 8,
     "LeftFoot": 11, "LeftShoulder": 12, "Neck": 14, "RightFoot": 15, "RightShoulder": 16, "Head": 19,

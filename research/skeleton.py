@@ -1,12 +1,12 @@
 """Skeleton blocks (STRB id 5), as the props carry them (the sleep animations' sheep and teddy bear, the user's
-launcher): SPECS.md, section 4.4.
+launcher): FORMATS.md, section 4.4.
 
 Little-endian. 8 u32 header words (the last the bone count), then a bit stream (LSB first) from byte 0x20:
   a position group: f32 step (the mesh step), f32 min x, y, z, three 6-bit widths;
   a rotation group, the same;
   per bone: u8 parent (255 for the root), the quantised position, the quantised rotation.
 
-Both groups decode as min + q * step * K, with the meshes' per-axis K (SPECS.md 3.3). Positions are the bone's rest
+Both groups decode as min + q * step * K, with the meshes' per-axis K (FORMATS.md 3.3). Positions are the bone's rest
 position in the mesh's space. Rotations are the bone's rest orientation in the mesh's space (not relative to the
 parent), stored as a quaternion logarithm: the rotation axis times half the angle. The bone's local +x points at its
 child, local z is the hinge axis of the limbs.

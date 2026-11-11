@@ -1,4 +1,4 @@
-// Shape overrides (SPECS.md, section 3.7): STRB block 4, how a garment or a face shape changes another model (the
+// Shape overrides (FORMATS.md, section 3.7): STRB block 4, how a garment or a face shape changes another model (the
 // body under a garment, the Head for a face shape): the target's triangles to hide, then its vertices to replace.
 // Not compressed; little-endian. Builds for the PC.
 
