@@ -7,6 +7,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "xsdk/avatar.h"
+
 // How a surface's colour is patterned (store_shaders.py).
 enum {
 	MATERIAL_PLAIN,
@@ -31,6 +33,10 @@ typedef struct {
 	uint32_t first;
 	uint32_t count;
 } MeshRange;
+
+// The lighting constants the mesh's lit materials take: the light as the library has it (xsdk_avatar_set_light, so
+// the store and the avatars match), then the camera's right, up and forward axes.
+void mesh_lighting(float out[MESH_LIGHT_VECTORS][4], const XsdkAvatarLight *light, const float axes[3][3]);
 
 // Shaders, states and room to build in; after xsdk_gpu_open.
 bool mesh_open(void);

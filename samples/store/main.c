@@ -1,21 +1,20 @@
-// Store: walk your avatar round the Avatar Thrift Store among NPCs, and emote from a wheel. The walk is the library's
-// (xsdk_avatar_animation_load_walk), and so are the run and the jump (_load_run, _load_jump); the store (scene.c), its
-// NPCs (npcs.c) and the wheel (wheel.c) are this sample's.
+// Store: walk your avatar round the Avatar Thrift Store among NPCs, and emote from a wheel. The walk, run and jump
+// are the library's (locomotion.c), the camera follows (follow_camera.c), the frame is drawn in bands (bands.c); the
+// store (scene.c), its NPCs (npcs.c), the wheel (wheel.c) and its emotes (emotes.c) are this sample's own.
 //
 // Left stick: walk (run while the right trigger is held). A: jump. Right stick: turn the camera. LB held: the emote
 // wheel; right stick picks, letting go of LB plays it. Right stick click: 2 / 4 / 1 samples a pixel. Both triggers:
 // screenshot. BACK: exit. Log: game:\store.log.
 
-#include <dirent.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <strings.h>
 #include <time.h>
 
+#include "bands.h"
+#include "emotes.h"
+#include "follow_camera.h"
+#include "locomotion.h"
 #include "mesh.h"
 #include "npcs.h"
 #include "scene.h"
@@ -36,106 +35,24 @@ enum {
 	CLEAR_ARGB = 0xFF101014,
 	USERS = 4,
 	REPORT_FRAMES = 300,
+	TRIGGER_PULLED = 128, // both triggers past this: a screenshot
+	TRIGGER_RUN = 64,     // the right trigger past this: running
 };
 
 static const float pi = 3.14159265f;
-static const float turn_rate = 9.0f, avatar_radius = 0.28f, shadow_radius = 0.38f;
-// The stick pushed all the way: walking, and running while the right trigger is held (metres a second).
-static const float walk_top_speed = 1.4f, run_top_speed = 2.6f;
-static const float camera_distance = 3.0f, camera_height = 1.0f, fade_seconds = 0.25f;
+static const float shadow_radius = 0.38f, fade_seconds = 0.25f;
 static const float talk_seconds = 3.5f, answer_reach = 2.5f;
+static const float stick_dead_zone = 0.2f;
+static const float max_frame_seconds = 0.1f; // a longer frame (a load, a hitch) counts as a 60th of a second
 
 static const XsdkAvatarStockPart stock_parts[] = { { "MaleBody", 0xFFDCAD8F }, { "Head", 0xFFDCAD8F },
 	{ "High and Tight", 0xFF4D331F }, { "Punk Jacket and Tee", 0xFF3359BF }, { "Black Skinny Fit Jeans", 0xFF26262E },
 	{ "Brown Formal Shoes", 0xFF663D1F }, { "Happy Eyes", 0xFF4A3020 }, { "Studious Eyebrows", 0xFF4D331F },
 	{ "Smirk Mouth", 0xFFB56157 } };
 
-// The wheel's emotes: an animation (male, female; NULL keeps standing), the face while it plays, and whether it talks.
-typedef struct {
-	const char *name, *male, *female;
-	XsdkAvatarFace face;
-	bool talks;
-} Emote;
-
-static const Emote emotes[] = {
-	{ "WAVE", XSDK_AVATAR_ANIMATION_WAVE, XSDK_AVATAR_ANIMATION_WAVE, { XSDK_AVATAR_EYE_HAPPY, XSDK_AVATAR_EYE_HAPPY, 0, 0, XSDK_AVATAR_MOUTH_HAPPY }, false },
-	{ "CLAP", XSDK_AVATAR_ANIMATION_CLAP, XSDK_AVATAR_ANIMATION_CLAP, { XSDK_AVATAR_EYE_HAPPY, XSDK_AVATAR_EYE_HAPPY, 0, 0, XSDK_AVATAR_MOUTH_HAPPY }, false },
-	{ "CHEER", XSDK_AVATAR_ANIMATION_CELEBRATE, XSDK_AVATAR_ANIMATION_CELEBRATE,
-		{ XSDK_AVATAR_EYE_LAUGHING, XSDK_AVATAR_EYE_LAUGHING, XSDK_AVATAR_EYEBROW_RAISED, XSDK_AVATAR_EYEBROW_RAISED, XSDK_AVATAR_MOUTH_LAUGHING }, false },
-	{ "LAUGH", "Animation Male Laugh", "Animation Female Laugh",
-		{ XSDK_AVATAR_EYE_LAUGHING, XSDK_AVATAR_EYE_LAUGHING, XSDK_AVATAR_EYEBROW_RAISED, XSDK_AVATAR_EYEBROW_RAISED, XSDK_AVATAR_MOUTH_LAUGHING }, false },
-	{ "TALK", NULL, NULL, { 0, 0, 0, 0, 0 }, true },
-	{ "ANGRY", "Animation Male Angry", "Animation Female Angry", { XSDK_AVATAR_EYE_ANGRY, XSDK_AVATAR_EYE_ANGRY, XSDK_AVATAR_EYEBROW_ANGRY, XSDK_AVATAR_EYEBROW_ANGRY, XSDK_AVATAR_MOUTH_ANGRY },
-		false },
-	{ "SAD", "Animation Male Sad Cry", "Animation Female Sad Cry", { XSDK_AVATAR_EYE_SAD, XSDK_AVATAR_EYE_SAD, XSDK_AVATAR_EYEBROW_SAD, XSDK_AVATAR_EYEBROW_SAD, XSDK_AVATAR_MOUTH_SAD }, false },
-	{ "CONFUSED", "Animation Male Confused", "Animation Female Confused",
-		{ XSDK_AVATAR_EYE_CONFUSED, XSDK_AVATAR_EYE_CONFUSED, XSDK_AVATAR_EYEBROW_CONFUSED, XSDK_AVATAR_EYEBROW_CONFUSED, XSDK_AVATAR_MOUTH_CONFUSED }, false },
-	{ "SHOCKED", "Animation Male Shocked Surprised", "Animation Female Shocked Surprised",
-		{ XSDK_AVATAR_EYE_SHOCKED, XSDK_AVATAR_EYE_SHOCKED, XSDK_AVATAR_EYEBROW_RAISED, XSDK_AVATAR_EYEBROW_RAISED, XSDK_AVATAR_MOUTH_SHOCKED }, false },
-	{ "YAWN", "Animation Male Yawn", "Animation Female Yawn", { XSDK_AVATAR_EYE_YAWNING, XSDK_AVATAR_EYE_YAWNING, 0, 0, XSDK_AVATAR_MOUTH_AI }, false },
-};
-enum { EMOTES = sizeof emotes / sizeof emotes[0] };
-static const XsdkAvatarFace neutral = { 0, 0, 0, 0, 0 };
-
-// Animations of the player's own (made in Blender, converted by tools/anim_convert.py): every .xaan file in the
-// Animations folder beside the title, up to MAX_CUSTOM, on the wheel after the stock emotes, named after their files.
-enum {
-	MAX_CUSTOM = 4,
-	NAME_LETTERS = 9,
-};
-static const char custom_folder[] = "Animations";
-static XsdkAvatarAnimation customs[MAX_CUSTOM];
-static char custom_names[MAX_CUSTOM][NAME_LETTERS + 1];
-static uint32_t custom_count;
-
-// A file's name as the wheel's font can write it: capital letters, 0 and spaces, NAME_LETTERS at most.
-static void wheel_name(char *out, const char *file)
-{
-	uint32_t n = 0;
-	for (const char *c = file; *c && *c != '.' && n < NAME_LETTERS; c++) {
-		char ch = *c >= 'a' && *c <= 'z' ? (char)(*c - 'a' + 'A') : *c;
-		out[n++] = (ch >= 'A' && ch <= 'Z') || ch == '0' ? ch : ' ';
-	}
-	out[n] = '\0';
-}
-
-static void load_customs(const XsdkAvatar *avatar)
-{
-	DIR *dir = opendir(custom_folder);
-	if (!dir) {
-		xsdk_log_write("store: no %s folder: no animations of your own", custom_folder);
-		return;
-	}
-	const struct dirent *entry;
-	while ((entry = readdir(dir)) && custom_count < MAX_CUSTOM) {
-		const size_t length = strlen(entry->d_name);
-		if (length < 5 || strcasecmp(entry->d_name + length - 5, ".xaan") != 0)
-			continue;
-		char path[300];
-		snprintf(path, sizeof path, "%s/%s", custom_folder, entry->d_name);
-		FILE *file = fopen(path, "rb");
-		if (!file)
-			continue;
-		(void)fseek(file, 0, SEEK_END);
-		const long size = ftell(file);
-		(void)fseek(file, 0, SEEK_SET);
-		void *bytes = size > 0 ? malloc((size_t)size) : NULL;
-		const bool read = bytes && fread(bytes, 1, (size_t)size, file) == (size_t)size;
-		(void)fclose(file);
-		// Made in Blender on the rig: its root turns about the rig's pivot, moved onto this avatar's (SPECS.md, 4.8).
-		const int result = read ? xsdk_avatar_animation_load(&customs[custom_count], bytes, (uint32_t)size,
-									  xsdk_avatar_skeleton(avatar))
-								: XSDK_AVATAR_ERROR_READ;
-		free(bytes);
-		xsdk_log_write("store: %s: %d, %u frames, %.2f s", path, result, (unsigned)customs[custom_count].frame_count,
-			(double)xsdk_avatar_animation_length(&customs[custom_count]));
-		if (result == XSDK_AVATAR_OK)
-			wheel_name(custom_names[custom_count++], entry->d_name);
-	}
-	(void)closedir(dir);
-}
-
-enum { STANDING, WALKING, RUNNING, EMOTING, JUMPING };
+// A warm light from above the front, as under the store's spots; the avatars and the store share it.
+static const XsdkAvatarLight light = { .direction = { 0.25f, 0.9f, 0.45f }, .color = { 0.85f, 0.78f, 0.66f },
+	.sky = { 0.42f, 0.40f, 0.38f }, .ground = { 0.24f, 0.19f, 0.15f }, .wrap = 0.4f, .highlight = 0.0f };
 
 static double seconds_now(void)
 {
@@ -144,12 +61,43 @@ static double seconds_now(void)
 	return (double)now.tv_sec + (double)now.tv_nsec * 1e-9;
 }
 
+// A stick axis, -1 to 1, with a dead zone in the middle and the rest stretched to fill the range.
 static float stick(int16_t value)
 {
 	const float v = (float)value / 32768.0f;
-	return fabsf(v) < 0.2f ? 0.0f : (v - (v > 0 ? 0.2f : -0.2f)) / 0.8f;
+	if (fabsf(v) < stick_dead_zone)
+		return 0.0f;
+	return (v - (v > 0 ? stick_dead_zone : -stick_dead_zone)) / (1.0f - stick_dead_zone);
 }
 
+// The controller this frame: its buttons (and those just pressed and let go), sticks and triggers.
+typedef struct {
+	uint16_t buttons, pressed, released;
+	float lx, ly, rx, ry;
+	bool triggers; // both pulled
+	bool run;      // the right trigger held
+} Pad;
+
+static Pad read_pad(uint16_t *previous)
+{
+	Pad pad = { 0 };
+	INPUT_STATE input;
+	if (XamInputGetState(0, 0, &input) == ERROR_SUCCESS) {
+		pad.buttons = input.gamepad.buttons;
+		pad.triggers = input.gamepad.left_trigger > TRIGGER_PULLED && input.gamepad.right_trigger > TRIGGER_PULLED;
+		pad.run = input.gamepad.right_trigger > TRIGGER_RUN;
+		pad.lx = stick(input.gamepad.thumb_lx);
+		pad.ly = stick(input.gamepad.thumb_ly);
+		pad.rx = stick(input.gamepad.thumb_rx);
+		pad.ry = stick(input.gamepad.thumb_ry);
+	}
+	pad.pressed = pad.buttons & (uint16_t)~*previous;
+	pad.released = *previous & (uint16_t)~pad.buttons;
+	*previous = pad.buttons;
+	return pad;
+}
+
+// The player's own avatar, from the first profile signed in, else a stock one.
 static XsdkAvatar *load_avatar(void)
 {
 	XsdkAvatar *avatar;
@@ -161,295 +109,171 @@ static XsdkAvatar *load_avatar(void)
 		: NULL;
 }
 
-// The library's own walk: the clip for the avatar's body, its root moved onto the avatar's skeleton; speed gets how
-// fast its steps go, for the pace.
-static bool make_walk(XsdkAvatar *avatar, XsdkAvatarAnimation *walk, float *speed)
+// What the player bumps into: the store and the NPCs.
+static void collide(float *x, float *z, float radius)
 {
+	scene_collide(x, z, radius);
+	npcs_collide(x, z, radius);
+}
+
+// The game: the player's avatar and how it moves, the camera, the wheel and talking.
+typedef struct {
+	XsdkAvatar *avatar;
+	uint32_t gender;
+	Locomotion me;
+	FollowCamera camera;
+	bool wheel_open;
+	int picked;      // the wheel's segment the stick points at, -1 for none
+	float talk_left; // seconds of talking left
+	float clock;     // seconds since starting
+} Game;
+
+// The wheel while LB is held, the right stick picking instead of turning the camera; letting go plays the emote.
+static void update_wheel(Game *g, const Pad *pad)
+{
+	g->wheel_open = (pad->buttons & INPUT_GAMEPAD_LEFT_SHOULDER) != 0;
+	if (g->wheel_open) {
+		const int p = wheel_pick(pad->rx, pad->ry);
+		if (p >= 0)
+			g->picked = p;
+	} else {
+		follow_camera_turn(&g->camera, pad->rx, pad->ry);
+	}
+	if ((pad->released & INPUT_GAMEPAD_LEFT_SHOULDER) && g->picked >= 0) {
+		if (emotes_play(g->avatar, g->gender, (uint32_t)g->picked)) {
+			g->talk_left = talk_seconds;
+			npcs_answer(npcs_nearest(g->me.x, g->me.z, answer_reach));
+		}
+		g->me.state = LOCOMOTION_BUSY;
+	}
+	if (!g->wheel_open)
+		g->picked = -1;
+}
+
+// The player's avatar this frame: a jump on A, moving where the left stick points, talking, back to a neutral face
+// when an emote has ended; then the avatar and the NPCs moved on.
+static void update_player(Game *g, const Pad *pad, float dt)
+{
+	if ((pad->pressed & INPUT_GAMEPAD_A) && !g->wheel_open && locomotion_jump(&g->me)) {
+		xsdk_avatar_set_face(g->avatar, &emotes_neutral);
+		g->talk_left = 0.0f;
+	}
+	float direction[2];
+	follow_camera_direction(&g->camera, pad->lx, pad->ly, direction);
+	if (locomotion_update(&g->me, direction[0], direction[1], pad->run, dt, collide)) {
+		xsdk_avatar_set_face(g->avatar, &emotes_neutral);
+		g->talk_left = 0.0f;
+	}
+	g->talk_left -= dt;
+	xsdk_avatar_set_talking(g->avatar, g->talk_left > 0.0f ? 0.35f + 0.65f * fabsf(sinf(7.0f * g->clock)) : 0.0f);
+	if (g->me.state == LOCOMOTION_BUSY && xsdk_avatar_player(g->avatar)->current.loop && g->talk_left <= 0.0f) {
+		xsdk_avatar_set_face(g->avatar, &emotes_neutral);
+		g->me.state = LOCOMOTION_STANDING;
+	}
+	xsdk_avatar_update(g->avatar, dt);
+	npcs_update(dt, g->me.x, g->me.z);
+}
+
+// What every band draws: the store, the shadows, the avatars, what glows, and the wheel over it all.
+typedef struct {
+	const Game *game;
+	float vp[16];
+	float lighting[MESH_LIGHT_VECTORS][4];
+} Frame;
+
+static void draw_band(void *context)
+{
+	const Frame *f = context;
+	const Game *g = f->game;
+	mesh_use_opaque();
+	scene_draw(f->vp, (const float (*)[4])f->lighting);
+	mesh_draw_shadow(f->vp, g->me.x, g->me.z, shadow_radius);
+	npcs_draw_shadows(f->vp);
+	xsdk_avatar_draw(g->avatar, f->vp);
+	npcs_draw(f->vp);
+	scene_draw_glow(f->vp, (const float (*)[4])f->lighting, g->clock);
+	if (g->wheel_open)
+		wheel_draw(g->picked);
+	else
+		wheel_draw_hint();
+}
+
+// Everything before the loop: the GPU, the player's avatar and its moves, the NPCs, the store and the wheel.
+static bool start(Game *g, uint32_t *width, uint32_t *height)
+{
+	NTSTATUS status = xsdk_gpu_open();
+	if (NT_SUCCESS(status))
+		status = xsdk_present_open(XSDK_DISPLAY_720P, BUFFERS, SWAP_INTERVAL, width, height);
+	if (!NT_SUCCESS(status) || !mesh_open()) {
+		xsdk_log_write("store: GPU setup failed: 0x%08X", (unsigned)status);
+		return false;
+	}
+	xsdk_avatar_set_light(&light);
+	g->avatar = load_avatar();
+	if (!g->avatar || !locomotion_load(&g->me, g->avatar, 0.0f, 1.0f, pi))
+		return false;
 	XsdkAvatarInfo info;
-	xsdk_avatar_info(avatar, &info);
-	const int result = xsdk_avatar_animation_load_walk(walk, info.gender, xsdk_avatar_skeleton(avatar), speed);
-	xsdk_log_write("store: walk for the %s body: %d, %.3f m/s", info.gender == XSDK_AVATAR_FEMALE ? "female" : "male",
-		result, (double)*speed);
-	return result == XSDK_AVATAR_OK && *speed > 0.0f;
-}
-
-// A camera at eye looking at target (0.95 radians high, 5 cm to 40 m), and its right, up and forward axes for the
-// scene's lighting: the view-projection's x, y and w rows, which are those axes scaled.
-static void look(float vp[16], float axes[3][3], const float eye[3], const float target[3], float aspect)
-{
-	xsdk_avatar_camera(vp, eye, target, 0.95f, aspect, 0.05f, 40.0f);
-	const uint32_t rows[3] = { 0, 1, 3 };
-	for (uint32_t a = 0; a < 3; a++) {
-		float length = 0.0f;
-		for (uint32_t col = 0; col < 3; col++)
-			length += vp[4 * col + rows[a]] * vp[4 * col + rows[a]];
-		length = sqrtf(length);
-		for (uint32_t col = 0; col < 3; col++)
-			axes[a][col] = vp[4 * col + rows[a]] / length;
-	}
-}
-
-static void light_constants(float out[MESH_LIGHT_VECTORS][4], const XsdkAvatarLight *light, const float axes[3][3])
-{
-	memset(out, 0, sizeof(float) * 4 * MESH_LIGHT_VECTORS);
-	const float *d = light->direction;
-	const float length = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
-	for (uint32_t k = 0; k < 3; k++) {
-		out[0][k] = d[k] / length;
-		out[1][k] = light->color[k];
-		out[2][k] = light->sky[k];
-		out[3][k] = light->ground[k];
-		out[4][k] = axes[0][k];
-		out[5][k] = axes[1][k];
-		out[6][k] = axes[2][k];
-	}
-	out[0][3] = light->wrap;
-	out[1][3] = light->highlight;
-}
-
-static uint32_t band_rows(uint32_t width, uint32_t height, uint32_t samples)
-{
-	uint32_t rows = (height + 31) / 32 * 32;
-	while (rows > 32 && 2 * xsdk_gpu_target_sample_tiles(width, rows, samples) > XSDK_EDRAM_TILES)
-		rows -= 32;
-	return rows;
-}
-
-static float turn_towards(float heading, float target, float step)
-{
-	float d = target - heading;
-	while (d > pi)
-		d -= 2.0f * pi;
-	while (d < -pi)
-		d += 2.0f * pi;
-	return heading + (fabsf(d) <= step ? d : (d > 0 ? step : -step));
+	xsdk_avatar_info(g->avatar, &info);
+	g->gender = info.gender;
+	g->camera = (FollowCamera){ .yaw = 0.0f, .pitch = 0.4f, .distance = 3.0f, .height = 1.0f,
+		.room = { STORE_HALF_X, STORE_HEIGHT, STORE_HALF_Z } };
+	g->picked = -1;
+	xsdk_log_write("store: %u NPCs", (unsigned)npcs_load());
+	scene_build();
+	(void)emotes_load(g->avatar);
+	const char *names[EMOTES_MAX];
+	const uint32_t count = emotes_names(names);
+	wheel_build(*width, *height, names, count);
+	if (!mesh_upload())
+		return false;
+	xsdk_avatar_player(g->avatar)->fade_seconds = fade_seconds;
+	(void)xsdk_avatar_play(g->avatar, XSDK_AVATAR_ANIMATION_STAND, XSDK_AVATAR_LOOP);
+	xsdk_gpu_set_depth_clear(1.0f, 0);
+	return true;
 }
 
 int main(void)
 {
+	static Game game;
 	uint32_t width = 0, height = 0;
-	NTSTATUS status = xsdk_gpu_open();
-	if (NT_SUCCESS(status))
-		status = xsdk_present_open(XSDK_DISPLAY_720P, BUFFERS, SWAP_INTERVAL, &width, &height);
-	if (!NT_SUCCESS(status) || !mesh_open()) {
-		xsdk_log_write("store: GPU setup failed: 0x%08X", (unsigned)status);
+	if (!start(&game, &width, &height))
 		return 1;
-	}
-	// A warm light from above the front, as under the store's spots; the avatars and the store share it.
-	const XsdkAvatarLight light = { .direction = { 0.25f, 0.9f, 0.45f }, .color = { 0.85f, 0.78f, 0.66f },
-		.sky = { 0.42f, 0.40f, 0.38f }, .ground = { 0.24f, 0.19f, 0.15f }, .wrap = 0.4f, .highlight = 0.0f };
-	xsdk_avatar_set_light(&light);
-	XsdkAvatar *avatar = load_avatar();
-	static XsdkAvatarAnimation walk;
-	float walk_speed = 1.0f;
-	if (!avatar || !make_walk(avatar, &walk, &walk_speed))
-		return 1;
-	XsdkAvatarInfo info;
-	xsdk_avatar_info(avatar, &info);
-	static XsdkAvatarAnimation jump;
-	const int jump_result = xsdk_avatar_animation_load_jump(&jump, info.gender, xsdk_avatar_skeleton(avatar));
-	const bool can_jump = jump_result == XSDK_AVATAR_OK;
-	static XsdkAvatarAnimation run;
-	float run_speed = 0.0f;
-	const int run_result = xsdk_avatar_animation_load_run(&run, info.gender, xsdk_avatar_skeleton(avatar), &run_speed);
-	const bool can_run = run_result == XSDK_AVATAR_OK && run_speed > 0.0f;
-	xsdk_log_write("store: run for the %s body: %d, %.3f m/s", info.gender == XSDK_AVATAR_FEMALE ? "female" : "male",
-		run_result, (double)run_speed);
-	xsdk_log_write("store: jump for the %s body: %d", info.gender == XSDK_AVATAR_FEMALE ? "female" : "male", jump_result);
-	xsdk_log_write("store: %u NPCs", (unsigned)npcs_load());
-	scene_build();
-	load_customs(avatar);
-	const char *names[EMOTES + MAX_CUSTOM];
-	for (uint32_t i = 0; i < EMOTES; i++)
-		names[i] = emotes[i].name;
-	for (uint32_t i = 0; i < custom_count; i++)
-		names[EMOTES + i] = custom_names[i];
-	wheel_build(width, height, names, EMOTES + custom_count);
-	if (!mesh_upload())
-		return 1;
-	XsdkAvatarPlayer *player = xsdk_avatar_player(avatar);
-	player->fade_seconds = fade_seconds;
-	(void)xsdk_avatar_play(avatar, XSDK_AVATAR_ANIMATION_STAND, XSDK_AVATAR_LOOP);
 	static XsdkTexture shot;
 	const bool can_shoot = screenshot_init(&shot, width, height);
-	xsdk_gpu_set_depth_clear(1.0f, 0);
-
-	float x = 0.0f, z = 1.0f, heading = pi, camera_yaw = 0.0f, camera_pitch = 0.4f, talk_left = 0.0f, clock = 0.0f;
-	uint32_t state = STANDING, samples = 2, frames = 0;
-	int picked = -1;
+	uint32_t samples = 2, frames = 0;
 	uint16_t previous_buttons = 0;
 	bool triggers_held = false;
 	double last_time = seconds_now(), cpu_seconds = 0.0;
-	for (uint32_t frame = 0;; frame++) {
-		INPUT_STATE input;
-		uint16_t buttons = 0;
-		float lx = 0, ly = 0, rx = 0, ry = 0;
-		bool triggers = false, run_held = false;
-		if (XamInputGetState(0, 0, &input) == ERROR_SUCCESS) {
-			buttons = input.gamepad.buttons;
-			triggers = input.gamepad.left_trigger > 128 && input.gamepad.right_trigger > 128;
-			run_held = input.gamepad.right_trigger > 64;
-			lx = stick(input.gamepad.thumb_lx);
-			ly = stick(input.gamepad.thumb_ly);
-			rx = stick(input.gamepad.thumb_rx);
-			ry = stick(input.gamepad.thumb_ry);
-		}
-		const uint16_t pressed = buttons & (uint16_t)~previous_buttons;
-		const uint16_t released = previous_buttons & (uint16_t)~buttons;
-		previous_buttons = buttons;
-		if (buttons & INPUT_GAMEPAD_BACK)
+	static Frame frame = { .game = &game };
+	for (;;) {
+		const Pad pad = read_pad(&previous_buttons);
+		if (pad.buttons & INPUT_GAMEPAD_BACK)
 			break;
-		if (pressed & INPUT_GAMEPAD_RIGHT_THUMB) {
+		if (pad.pressed & INPUT_GAMEPAD_RIGHT_THUMB) {
 			samples = samples == 4 ? 1 : samples * 2;
 			xsdk_log_write("store: %u samples a pixel", (unsigned)samples);
 		}
 		const double now = seconds_now();
 		float dt = (float)(now - last_time);
 		last_time = now;
-		if (dt < 0.0f || dt > 0.1f)
+		if (dt < 0.0f || dt > max_frame_seconds)
 			dt = 1.0f / 60.0f;
-		clock += dt;
-		// The wheel: open while LB is held, the right stick picking instead of turning the camera.
-		const bool wheel_open = (buttons & INPUT_GAMEPAD_LEFT_SHOULDER) != 0;
-		if (wheel_open) {
-			const int p = wheel_pick(rx, ry);
-			if (p >= 0)
-				picked = p;
-		} else {
-			camera_yaw -= 0.045f * rx;
-			camera_pitch -= 0.03f * ry;
-			camera_pitch = camera_pitch < 0.05f ? 0.05f : camera_pitch > 1.1f ? 1.1f : camera_pitch;
-		}
-		if ((released & INPUT_GAMEPAD_LEFT_SHOULDER) && picked >= EMOTES) {
-			// One of the player's own: once, then back to standing, with a neutral face.
-			player->speed = 1.0f;
-			xsdk_avatar_player_play(player, &customs[picked - EMOTES], XSDK_AVATAR_ONCE);
-			(void)xsdk_avatar_queue(avatar, XSDK_AVATAR_ANIMATION_STAND, XSDK_AVATAR_LOOP);
-			xsdk_avatar_set_face(avatar, &neutral);
-			state = EMOTING;
-			xsdk_log_write("store: %s", custom_names[picked - EMOTES]);
-		} else if ((released & INPUT_GAMEPAD_LEFT_SHOULDER) && picked >= 0) {
-			const Emote *e = &emotes[picked];
-			const char *animation = info.gender == XSDK_AVATAR_FEMALE ? e->female : e->male;
-			player->speed = 1.0f;
-			if (animation && xsdk_avatar_play(avatar, animation, XSDK_AVATAR_ONCE) == XSDK_AVATAR_OK)
-				(void)xsdk_avatar_queue(avatar, XSDK_AVATAR_ANIMATION_STAND, XSDK_AVATAR_LOOP);
-			else
-				(void)xsdk_avatar_play(avatar, XSDK_AVATAR_ANIMATION_STAND, XSDK_AVATAR_LOOP);
-			xsdk_avatar_set_face(avatar, &e->face);
-			if (e->talks) {
-				talk_left = talk_seconds;
-				npcs_answer(npcs_nearest(x, z, answer_reach));
-			}
-			state = EMOTING;
-			xsdk_log_write("store: %s", e->name);
-		}
-		if (!wheel_open)
-			picked = -1;
-		// A: the library's jump, in place, once, then back to standing (or walking, if the stick is held by then).
-		if ((pressed & INPUT_GAMEPAD_A) && !wheel_open && can_jump && state != JUMPING) {
-			player->speed = 1.0f;
-			xsdk_avatar_player_play(player, &jump, XSDK_AVATAR_ONCE);
-			(void)xsdk_avatar_queue(avatar, XSDK_AVATAR_ANIMATION_STAND, XSDK_AVATAR_LOOP);
-			xsdk_avatar_set_face(avatar, &neutral);
-			talk_left = 0.0f;
-			state = JUMPING;
-		}
+		game.clock += dt;
+		update_wheel(&game, &pad);
 		const double cpu_start = seconds_now();
-
-		const float forward[2] = { -sinf(camera_yaw), -cosf(camera_yaw) };
-		const float right[2] = { cosf(camera_yaw), -sinf(camera_yaw) };
-		float dx = right[0] * lx + forward[0] * ly, dz = right[1] * lx + forward[1] * ly;
-		float push = sqrtf(dx * dx + dz * dz);
-		if (push > 1.0f) {
-			dx /= push;
-			dz /= push;
-			push = 1.0f;
-		}
-		if (state == JUMPING) {
-			// In place: the feet stay where they stood until the jump has landed and its standing has begun.
-			if (player->current.loop)
-				state = STANDING;
-		} else if (push > 0.0f) {
-			// Walking, or running while the right trigger is held: each clip played at the pace its feet cover the
-			// ground at.
-			const bool running = can_run && run_held;
-			const float speed = push * (running ? run_top_speed : walk_top_speed);
-			heading = turn_towards(heading, atan2f(dx, dz), turn_rate * dt);
-			x += dx / push * speed * dt;
-			z += dz / push * speed * dt;
-			scene_collide(&x, &z, avatar_radius);
-			npcs_collide(&x, &z, avatar_radius);
-			if (running ? state != RUNNING : state != WALKING) {
-				xsdk_avatar_player_play(player, running ? &run : &walk, XSDK_AVATAR_LOOP);
-				xsdk_avatar_set_face(avatar, &neutral);
-				talk_left = 0.0f;
-				state = running ? RUNNING : WALKING;
-			}
-			const float pace = speed / (running ? run_speed : walk_speed);
-			player->speed = pace < 0.6f ? 0.6f : pace > 2.0f ? 2.0f : pace;
-		} else if (state == WALKING || state == RUNNING) {
-			player->speed = 1.0f;
-			(void)xsdk_avatar_play(avatar, XSDK_AVATAR_ANIMATION_STAND, XSDK_AVATAR_LOOP);
-			state = STANDING;
-		}
-		talk_left -= dt;
-		xsdk_avatar_set_talking(avatar, talk_left > 0.0f ? 0.35f + 0.65f * fabsf(sinf(7.0f * clock)) : 0.0f);
-		if (state == EMOTING && player->current.loop && talk_left <= 0.0f) {
-			xsdk_avatar_set_face(avatar, &neutral);
-			state = STANDING;
-		}
-		float world[16];
-		xsdk_avatar_placement(world, x, 0.0f, z, heading);
-		xsdk_avatar_set_transform(avatar, world);
-		xsdk_avatar_update(avatar, dt);
-		npcs_update(dt, x, z);
-
-		const float target[3] = { x, camera_height, z };
-		float eye[3] = { x + camera_distance * sinf(camera_yaw) * cosf(camera_pitch),
-			camera_height + camera_distance * sinf(camera_pitch),
-			z + camera_distance * cosf(camera_yaw) * cosf(camera_pitch) };
-		eye[0] = fmaxf(-STORE_HALF_X + 0.15f, fminf(STORE_HALF_X - 0.15f, eye[0]));
-		eye[1] = fminf(STORE_HEIGHT - 0.15f, eye[1]);
-		eye[2] = fmaxf(-STORE_HALF_Z + 0.15f, fminf(STORE_HALF_Z - 0.15f, eye[2]));
-		float vp[16], axes[3][3], lighting[MESH_LIGHT_VECTORS][4];
-		look(vp, axes, eye, target, (float)width / (float)height);
-		light_constants(lighting, &light, (const float (*)[3])axes);
-		const bool shoot = can_shoot && triggers && !triggers_held;
-		triggers_held = triggers;
+		update_player(&game, &pad, dt);
+		float axes[3][3];
+		follow_camera_view(&game.camera, game.me.x, game.me.z, (float)width / (float)height, frame.vp, axes);
+		mesh_lighting(frame.lighting, &light, (const float (*)[3])axes);
+		const bool shoot = can_shoot && pad.triggers && !triggers_held;
+		triggers_held = pad.triggers;
 		cpu_seconds += seconds_now() - cpu_start;
 
 		uint32_t address;
 		if (!NT_SUCCESS(xsdk_present_begin(&address, BEGIN_TIMEOUT_MS)))
 			break;
 		const double draw_start = seconds_now();
-		const uint32_t rows = band_rows(width, height, samples);
-		// Every band's colour after a whole band's depth: xsdk's own layout (depth, then colour) follows each
-		// target's size, so the last, shorter band's colour would lie where the others keep depth, and its clear
-		// (CLEAR_ARGB, read as depth about 0.996, some 10 m away) would hide what is farther in their rows (test run 6).
-		const uint32_t color_tile = xsdk_gpu_target_sample_tiles(width, rows, samples);
-		for (uint32_t top = 0; top < height; top += rows) {
-			const uint32_t band = height - top < rows ? height - top : rows;
-			xsdk_gpu_set_target_samples_at(width, band, samples, color_tile, 0);
-			xsdk_gpu_set_viewport(0.0f, -(float)top, (float)width, (float)height, 0.0f, 1.0f);
-			mesh_use_opaque();
-			scene_draw(vp, (const float (*)[4])lighting);
-			mesh_draw_shadow(vp, x, z, shadow_radius);
-			npcs_draw_shadows(vp);
-			xsdk_avatar_draw(avatar, vp);
-			npcs_draw(vp);
-			scene_draw_glow(vp, (const float (*)[4])lighting, clock);
-			if (wheel_open)
-				wheel_draw(picked);
-			else
-				wheel_draw_hint();
-			if (shoot) {
-				xsdk_gpu_set_resolve_clears(false, false);
-				xsdk_gpu_resolve(shot.address + top * shot.pitch * 4, width, band, CLEAR_ARGB);
-				xsdk_gpu_set_resolve_clears(true, true);
-			}
-			xsdk_gpu_resolve(address + top * width * 4, width, band, CLEAR_ARGB);
-		}
+		bands_draw(width, height, samples, address, shoot ? &shot : NULL, CLEAR_ARGB, draw_band, &frame);
 		cpu_seconds += seconds_now() - draw_start;
 		xsdk_present_end();
 		if (shoot) {
@@ -465,13 +289,10 @@ int main(void)
 	}
 	xsdk_present_close();
 	(void)xsdk_gpu_wait(xsdk_gpu_fence(), FENCE_TIMEOUT_MS);
-	xsdk_avatar_close(avatar);
+	xsdk_avatar_close(game.avatar);
 	npcs_close();
-	xsdk_avatar_animation_free(&walk);
-	xsdk_avatar_animation_free(&jump);
-	xsdk_avatar_animation_free(&run);
-	for (uint32_t i = 0; i < custom_count; i++)
-		xsdk_avatar_animation_free(&customs[i]);
+	locomotion_free(&game.me);
+	emotes_free();
 	xsdk_avatar_shutdown();
 	mesh_close();
 	(void)xsdk_gpu_close();

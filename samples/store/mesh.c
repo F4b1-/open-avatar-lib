@@ -29,6 +29,24 @@ static MeshRange shadow_quad;
 static XsdkDepthStencilState opaque_depth, test_only, no_depth;
 static XsdkBlendState alpha_blend, no_blend;
 
+void mesh_lighting(float out[MESH_LIGHT_VECTORS][4], const XsdkAvatarLight *light, const float axes[3][3])
+{
+	memset(out, 0, sizeof(float) * 4 * MESH_LIGHT_VECTORS);
+	const float *d = light->direction;
+	const float length = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+	for (uint32_t k = 0; k < 3; k++) {
+		out[0][k] = d[k] / length;
+		out[1][k] = light->color[k];
+		out[2][k] = light->sky[k];
+		out[3][k] = light->ground[k];
+		out[4][k] = axes[0][k];
+		out[5][k] = axes[1][k];
+		out[6][k] = axes[2][k];
+	}
+	out[0][3] = light->wrap;
+	out[1][3] = light->highlight;
+}
+
 static bool load(XsdkShader *shader, const AvatarShaderCode *code)
 {
 	const NTSTATUS status = xsdk_shader_load(shader, code->container, code->container_bytes);
