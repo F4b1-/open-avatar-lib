@@ -7,7 +7,7 @@ avatar file formats, outfit assembly, facial expressions, skeletal animation, an
 scenes. All meshes, textures, clothing items, and animations are read directly from the console at run time,
 so neither the library nor your game needs to bundle Microsoft assets. Animations can either be imported or created directly in code.
 
-New here? Start with [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) and `samples/hello_avatar_world`.
+Start with [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) and `samples/hello_avatar_world`.
 
 ## A first avatar
 
