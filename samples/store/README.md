@@ -17,6 +17,7 @@ flakes is moved down as one and wrapped round, `mesh_draw_placed`).
 | right stick | the camera round the avatar, and up and down |
 | LB held | the emote wheel: the right stick picks, letting go of LB plays it |
 | right stick click | 2 / 4 / 1 samples a pixel (2 after starting: nine avatars are drawn once per band) |
+| RB | the avatars drawn directly / recorded into a command buffer ahead of the frame, then run in every band; the log says which, with the CPU and GPU time a frame |
 | both triggers | screenshot: a PNG in `Screenshots` next to the title |
 | BACK | exit |
 
@@ -39,6 +40,8 @@ three). They blink, idle now and then (the stock idles), turn to the player when
 | `main.c` | loading, the controls, the game loop; walking, running and jumping through the library's locomotion (`xsdk_avatar_locomotion_drive`) |
 | `follow_camera.c` | the camera orbiting the avatar, kept inside the room, and the stick's direction as it sees it |
 | `bands.c` | the frame drawn in bands that fit eDRAM, each resolved (and into a screenshot) |
+| `gpu_frames.c` | per frame in flight: the avatars' recording (RB) and the GPU clock read around the bands, for the cost log |
+| `screenshot.c` | the screen as a PNG in `Screenshots` next to the title (`Store_001.png`, ...): stored deflate, no library |
 | `emotes.c` | the wheel's emotes: stock animations with faces, talking, and your own animations |
 | `scene.c` | the store: its parts, the sign, what avatars bump into |
 | `npcs.c` | the NPCs: outfits, places and behaviour |
@@ -47,7 +50,7 @@ three). They blink, idle now and then (the stock idles), turn to the player when
 | `font.c` | a small stroke font of our own (capitals, 0, space) for the sign, the tags and the wheel |
 | `store_shaders.py` | the store's shaders, made with the library's generator, lit by its `LIGHTING` |
 
-Screenshots use `samples/viewer/screenshot.c`. Build with `./build.sh` at the top of the project:
+Build with `./build.sh` at the top of the project:
 `build/console/samples/store/store.xex`; its log is `store.log` next to it.
 
 ## Animations of your own

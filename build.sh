@@ -1,6 +1,6 @@
 #!/bin/bash
 # Builds the library and its samples with xsdk, or the PC tools, in WSL:
-#   ./build.sh [<xsdk checkout>]     build/console: libxsdk_avatar.a and the samples (viewer, hello, store, rig_export .xex)
+#   ./build.sh [<xsdk checkout>]     build/console: libxsdk_avatar.a and the samples (hello_avatar_world, store, rig_export .xex)
 #   ./build.sh pc [<xsdk checkout>]  build/pc: avatar_dump and the checks, with the host gcc
 # Uses Avatar Thrift Store's xsdk submodule unless another checkout is named, until this project has its own.
 set -euo pipefail
@@ -37,4 +37,4 @@ make -s -C "$xsdk" build/libxsdk.a build/host/libxsc.so
 cmake -S "$root" -B "$root/build/console" -G Ninja -DCMAKE_BUILD_TYPE=Release \
 	-DCMAKE_TOOLCHAIN_FILE="$xsdk/cmake/xsdk.cmake"
 cmake --build "$root/build/console"
-echo "Built $root/build/console/samples: viewer/viewer.xex, hello_avatar_world/hello_avatar_world.xex, store/store.xex, rig_export/rig_export.xex"
+echo "Built $root/build/console/samples: hello_avatar_world/hello_avatar_world.xex, store/store.xex, rig_export/rig_export.xex"

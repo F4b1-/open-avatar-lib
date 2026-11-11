@@ -54,7 +54,7 @@ static void store_look(float vp[16], const float eye[3], const float target[3], 
 	}
 }
 
-// samples/viewer/main.c's camera(), before the helper: orbiting target at yaw.
+// The retired viewer sample's camera(), before the helper: orbiting target at yaw.
 static void viewer_camera(float vp[16], const float target[3], float yaw, float distance, float aspect)
 {
 	const float focal = 1.0f / tanf(0.5f * 0.6f);

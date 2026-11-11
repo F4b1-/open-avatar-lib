@@ -621,7 +621,7 @@ bool xsdk_avatar_locomotion_update(XsdkAvatarLocomotion *locomotion, XsdkAvatarP
 // being recorded (whose constants are those of the moment it was recorded). It never sets targets, clears,
 // resolves, presents or waits. A draw changes: the shaders; vertex constants 0-222 and pixel constants 0-29; vertex
 // stream 0; texture fetch slots 0-5; the blend state, left as no blending. Depth, culling, the viewport and the
-// target's samples are the title's: a multisampled target drawn in bands works (samples/viewer). Lighting reads the
+// target's samples are the title's: a multisampled target drawn in bands works (samples/store). Lighting reads the
 // camera's axes from view_projection, so a title that draws in bands moves the viewport, not the projection.
 
 typedef struct XsdkAvatar XsdkAvatar;

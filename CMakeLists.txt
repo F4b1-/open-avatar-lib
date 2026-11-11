@@ -53,7 +53,6 @@ target_include_directories(xsdk_avatar PUBLIC include PRIVATE src "${generated}"
 target_compile_options(xsdk_avatar PRIVATE $<$<COMPILE_LANGUAGE:C>:-std=gnu17 -O2 -Wall -Wextra -Werror>)
 
 if(PROJECT_IS_TOP_LEVEL)
-	add_subdirectory(samples/viewer)
 	add_subdirectory(samples/hello_avatar_world)
 	add_subdirectory(samples/store)
 	add_subdirectory(samples/rig_export)

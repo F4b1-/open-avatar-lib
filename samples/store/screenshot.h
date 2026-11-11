@@ -1,8 +1,8 @@
-#ifndef VIEWER_SCREENSHOT_H
-#define VIEWER_SCREENSHOT_H
+#ifndef STORE_SCREENSHOT_H
+#define STORE_SCREENSHOT_H
 
 // Screenshots as Avatar Thrift Store takes them: both triggers save the screen as a PNG in game:\Screenshots, next to
-// the viewer (AvatarViewer_001.png, _002, ...).
+// the title (Store_001.png, _002, ...).
 
 #include <stdbool.h>
 #include <stddef.h>

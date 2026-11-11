@@ -174,7 +174,7 @@ static bool add(XsdkAvatar *avatar, const Spec *spec)
 	return true;
 }
 
-// NPCs from description files in the Avatars folder (as samples/viewer loads them), browsing at the spare spots.
+// NPCs from description files in the Avatars folder, browsing at the spare spots.
 static void load_extras(void)
 {
 	DIR *dir = opendir(npc_folder);

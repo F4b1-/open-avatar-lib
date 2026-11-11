@@ -178,7 +178,7 @@ bool screenshot_save(const XsdkTexture *texture, char *path, size_t path_size)
 		struct stat info;
 		if (encode_png(pixels, width, height, &png) && (stat(folder, &info) == 0 || mkdir(folder, 0777) == 0)) {
 			for (int n = 1; n < 1000 && !saved; n++) {
-				snprintf(path, path_size, "%s\\AvatarViewer_%03d.png", folder, n);
+				snprintf(path, path_size, "%s\\Store_%03d.png", folder, n);
 				if (stat(path, &info) == 0)
 					continue;
 				saved = write_file(path, &png);

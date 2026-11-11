@@ -4,7 +4,8 @@
 // sample's own.
 //
 // Left stick: walk (run while the right trigger is held). A: jump. Right stick: turn the camera. LB held: the emote
-// wheel; right stick picks, letting go of LB plays it. Right stick click: 2 / 4 / 1 samples a pixel. Both triggers:
+// wheel; right stick picks, letting go of LB plays it. Right stick click: 2 / 4 / 1 samples a pixel. RB: the avatars
+// drawn directly or recorded into a command buffer (the log gives CPU and GPU time a frame). Both triggers:
 // screenshot. BACK: exit. Log: game:\store.log.
 
 #include <math.h>
@@ -15,6 +16,7 @@
 #include "bands.h"
 #include "emotes.h"
 #include "follow_camera.h"
+#include "gpu_frames.h"
 #include "mesh.h"
 #include "npcs.h"
 #include "scene.h"
@@ -173,12 +175,22 @@ static void update_player(Game *g, const Pad *pad, float dt)
 	npcs_update(dt, g->me.x, g->me.z);
 }
 
-// What every band draws: the store, the shadows, the avatars, what glows, and the wheel over it all.
+// What every band draws: the store, the shadows, the avatars (drawn, or their recording run again), what glows, and
+// the wheel over it all.
 typedef struct {
 	const Game *game;
 	float vp[16];
 	float lighting[MESH_LIGHT_VECTORS][4];
+	const XsdkCommandBuffer *recording; // the avatars' draws recorded ahead of the frame, or NULL: drawn directly
 } Frame;
+
+// The avatars: the player's and the NPCs.
+static void draw_avatars(void *context)
+{
+	const Frame *f = context;
+	xsdk_avatar_draw(f->game->avatar, f->vp);
+	npcs_draw(f->vp);
+}
 
 static void draw_band(void *context)
 {
@@ -188,8 +200,10 @@ static void draw_band(void *context)
 	scene_draw(f->vp, (const float (*)[4])f->lighting);
 	mesh_draw_shadow(f->vp, g->me.x, g->me.z, shadow_radius);
 	npcs_draw_shadows(f->vp);
-	xsdk_avatar_draw(g->avatar, f->vp);
-	npcs_draw(f->vp);
+	if (f->recording)
+		xsdk_gpu_execute(f->recording);
+	else
+		draw_avatars(context);
 	scene_draw_glow(f->vp, (const float (*)[4])f->lighting, g->clock);
 	if (g->wheel_open)
 		wheel_draw(g->picked);
@@ -241,9 +255,12 @@ int main(void)
 		return 1;
 	static XsdkTexture shot;
 	const bool can_shoot = screenshot_init(&shot, width, height);
+	static GpuFrames gpu;
+	if (!gpu_frames_open(&gpu))
+		return 1;
 	uint32_t samples = 2, frames = 0;
 	uint16_t previous_buttons = 0;
-	bool triggers_held = false;
+	bool triggers_held = false, recorded = false;
 	double last_time = seconds_now(), cpu_seconds = 0.0;
 	static Frame frame = { .game = &game };
 	for (;;) {
@@ -254,6 +271,11 @@ int main(void)
 			samples = samples == 4 ? 1 : samples * 2;
 			xsdk_log_write("store: %u samples a pixel", (unsigned)samples);
 		}
+		if ((pad.pressed & INPUT_GAMEPAD_RIGHT_SHOULDER) && gpu.can_record) {
+			recorded = !recorded;
+			xsdk_log_write("store: avatars %s", recorded ? "recorded into a command buffer" : "drawn directly");
+		}
+		gpu_frames_next(&gpu);
 		const double now = seconds_now();
 		float dt = (float)(now - last_time);
 		last_time = now;
@@ -266,6 +288,10 @@ int main(void)
 		float axes[3][3];
 		follow_camera_view(&game.camera, game.me.x, game.me.z, (float)width / (float)height, frame.vp, axes);
 		mesh_lighting(frame.lighting, &light, (const float (*)[3])axes);
+		// RB: the avatars' draws recorded ahead of the frame, then run in every band.
+		frame.recording = NULL;
+		if (recorded)
+			frame.recording = gpu_frames_record(&gpu, draw_avatars, &frame);
 		const bool shoot = can_shoot && pad.triggers && !triggers_held;
 		triggers_held = pad.triggers;
 		cpu_seconds += seconds_now() - cpu_start;
@@ -274,22 +300,28 @@ int main(void)
 		if (!NT_SUCCESS(xsdk_present_begin(&address, BEGIN_TIMEOUT_MS)))
 			break;
 		const double draw_start = seconds_now();
+		gpu_frames_clock_before(&gpu);
 		bands_draw(width, height, samples, address, shoot ? &shot : NULL, CLEAR_ARGB, draw_band, &frame);
+		gpu_frames_clock_after(&gpu);
 		cpu_seconds += seconds_now() - draw_start;
 		xsdk_present_end();
+		gpu_frames_fence(&gpu, !shoot);
 		if (shoot) {
 			char path[96];
 			if (screenshot_save(&shot, path, sizeof path))
 				xsdk_log_write("store: screenshot %s", path);
 		}
 		if (++frames == REPORT_FRAMES) {
-			xsdk_log_write("store: %u samples, CPU %.0f us a frame", (unsigned)samples, cpu_seconds * 1e6 / frames);
+			xsdk_log_write("store: %u samples, avatars %s (%u dwords): CPU %.0f us, GPU %.0f us a frame",
+				(unsigned)samples, frame.recording ? "recorded" : "direct", frame.recording ? (unsigned)gpu.recorded : 0u,
+				cpu_seconds * 1e6 / frames, gpu_frames_take_us(&gpu));
 			frames = 0;
 			cpu_seconds = 0.0;
 		}
 	}
 	xsdk_present_close();
 	(void)xsdk_gpu_wait(xsdk_gpu_fence(), FENCE_TIMEOUT_MS);
+	gpu_frames_close(&gpu);
 	xsdk_avatar_close(game.avatar);
 	npcs_close();
 	xsdk_avatar_locomotion_free(&game.me);

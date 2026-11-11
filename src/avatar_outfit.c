@@ -30,7 +30,7 @@ static const uint32_t stock_colors[XSDK_AVATAR_COLORS] = {
 };
 
 // Stand-ins for missing items, per gender: the slots an avatar looks wrong without. Missing accessories are left
-// out. The viewer's stock outfits, drawn right on the console (SPECS.md, section 6).
+// out. Stock outfits that drew right on the console (SPECS.md, section 6).
 typedef struct {
 	uint32_t slot;
 	const char *names[2]; // male, female

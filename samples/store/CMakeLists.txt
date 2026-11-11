@@ -9,9 +9,9 @@ add_custom_command(
 	COMMAND ${CMAKE_COMMAND} -E rename "${store_generated}/store_shaders.h.new" "${store_generated}/store_shaders.h"
 	DEPENDS store_shaders.py "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/gen_shaders.py"
 	VERBATIM)
-add_executable(store main.c follow_camera.c bands.c emotes.c mesh.c font.c scene.c npcs.c wheel.c
-	../viewer/screenshot.c "${store_generated}/store_shaders.h")
-target_include_directories(store PRIVATE ../viewer "${store_generated}")
+add_executable(store main.c follow_camera.c bands.c emotes.c gpu_frames.c screenshot.c mesh.c font.c scene.c npcs.c wheel.c
+	"${store_generated}/store_shaders.h")
+target_include_directories(store PRIVATE "${store_generated}")
 target_compile_options(store PRIVATE -std=gnu17 -O2 -Wall -Wextra -Werror)
 target_link_libraries(store PRIVATE xsdk_avatar m)
 xsdk_add_xex(store)
