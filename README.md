@@ -11,20 +11,6 @@ imported, or poses set bone by bone in code.
 
 Start with [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) and `samples/hello_avatar_world`.
 
-## Status: beta (v0.1.0)
-
-Everything below works on the console and is in daily use by the samples, but the API may still change before 1.0,
-and it has been tried on one console with a few profiles so far. Known limits:
-
-- Carried props (slot 0x1000: a guitar, a launcher) are left out; they bring skeletons and animations of their own.
-- Loading is synchronous: tens of milliseconds an avatar, on the calling thread.
-- The stock animations' facial keys aren't decoded: faces are set by the title (`xsdk_avatar_set_face`), and the
-  avatar blinks and talks on its own.
-- Items on memory units, a slim's 4 GB flash or under a profile's own content folder are searched for, but no such
-  item has been seen on a console yet ([docs/FORMATS.md](docs/FORMATS.md), section 4).
-
-Reports from other consoles, profiles and items are welcome: open an issue with the title's log.
-
 ## A first avatar
 
 ```c
