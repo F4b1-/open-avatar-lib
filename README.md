@@ -1,5 +1,8 @@
 # Open Avatar Lib
 
+
+![Open Avatar Lib header showing a custom avatar wearing the annoying pear headgear](screenshots/header.jpg)
+
 `Open Avatar Lib` is an open-source C17 library for loading, animating, and rendering Xbox 360 Avatars in
 homebrew games and applications built on and made to work alongside [xsdk](https://github.com/xenosworks/xsdk). It
 lets a title bring the signed-in player's own avatar — or any custom Avatar — into a 3D scene in a few function
