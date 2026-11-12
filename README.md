@@ -1,4 +1,17 @@
-# Open Avatar Lib
+<div align="center">
+  <h1>Open Avatar Lib</h1>
+  <p>
+    <a href="https://github.com/F4b1-/open-avatar-lib/actions/workflows/ci.yml">
+      <img src="https://img.shields.io/github/actions/workflow/status/F4b1-/open-avatar-lib/ci.yml?branch=main&style=flat-square&label=CI" alt="CI" />
+    </a>
+    <a href="https://github.com/F4b1-/open-avatar-lib/releases">
+      <img src="https://img.shields.io/github/v/release/F4b1-/open-avatar-lib?style=flat-square" alt="Release" />
+    </a>
+    <a href="https://github.com/F4b1-/open-avatar-lib/blob/main/LICENSE">
+      <img src="https://img.shields.io/github/license/F4b1-/open-avatar-lib?style=flat-square" alt="License" />
+    </a>
+  </p>
+</div>
 
 `Open Avatar Lib` is an open-source C17 library for loading, animating, and rendering Xbox 360 Avatars in
 homebrew games and applications built on and made to work alongside [xsdk](https://github.com/xenosworks/xsdk). It
