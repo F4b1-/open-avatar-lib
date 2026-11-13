@@ -134,29 +134,6 @@ In WSL, from this folder, naming an xsdk checkout:
    `xsdk_avatar_animation_load` reads (the store sample plays files from an `Animations` folder beside it).
    `build/pc/walk_check <pack> clip <walk.xaan>` checks a walk of your own: no foot sliding or sinking, no twist.
 
-## Checks on the PC
-
-They run on your own console files, never on files in this repository:
-
-- `tools/probe_pack` copies the stock pack (`FFFE07DF00000002`) off a running console, where FTP cannot open `\SEP`.
-- `tools/probe_manifest` dumps each signed-in profile's 1000-byte avatar description (`manifest_u<n>_avatar.bin`),
-  for `outfit_check` or for shipping as an NPC.
-
-`./build.sh pc` takes the compiler from `$CC` (gcc if unset). CI (`.github/workflows/ci.yml`) builds them all with GCC
-and Clang on every push and pull request, runs `player_check` and `camera_check` (the two that need no console files),
-and compiles the Python tools; the console build and the checks on console files stay local.
-
-- `player_check`: the player's cross-fades, queueing and timing, on made-up animations.
-- `camera_check`: the camera and placement helpers.
-- `locomotion_check <pack>`: walking, running, turning, collisions and the jump, frame by frame.
-- `walk_check <pack> [walk | run | jump | clip <file>]`: the library's clips (or yours) by the skinned feet.
-- `anim_check <pack> <file.xaan> "<stock name>"`: a converted glTF animation against the stock one it holds.
-- `outfit_check <pack> <description> <package folder> ...`: an avatar's parts put together as on the console; with
-  `stock` or `hat`, stock avatars (face features; hair under a hat); with `export <out.glb> ...`, the rig export.
-- `alloc_check <pack>` and `outfit_alloc_check <pack> alloc <description> ...`: every load with its 1st, 2nd, 3rd,
-  ... allocation failing, built with AddressSanitizer.
-- `avatar_dump` with `research/check_c.py`: the decoders against the Python prototypes in `research/`.
-
 ## Where the knowledge comes from
 
 [docs/FORMATS.md](docs/FORMATS.md) holds everything known about the avatar files, each fact with its evidence;
