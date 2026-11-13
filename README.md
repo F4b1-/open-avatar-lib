@@ -123,9 +123,7 @@ In WSL, from this folder, naming an xsdk checkout:
 ## Making animations
 
 1. Run `samples/rig_export` on the console. It writes rigs to animate beside its `.xex`: `rig_male.glb` and
-   `rig_female.glb` (the bare body and head) and `rig_mine.glb` (your signed-in avatar in its clothes). Each is the
-   library's 71-bone skeleton in the T-pose with 360sona's bone names, textured. They hold the console's meshes:
-   keep them out of any repository.
+   `rig_female.glb` (the bare body and head) and `rig_mine.glb` (your signed-in avatar in its clothes).
 2. Import one into Blender (or any 3D program that reads glTF), animate, and export glTF with the animation. Legs
    baked from an IK rig often twist the thighs unseen: `tools/blender_legs.py` straightens them, and
    `tools/blender_life.py` and `tools/blender_detail.py` are the passes the library's own clips went through (each
